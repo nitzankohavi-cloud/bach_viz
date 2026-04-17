@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach Visualisation · Master Edition (V.Final - Production Ready)
+// Bach Visualisation · Master Edition (V.Final - Fixed Track Switching)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class BachLibrary {
@@ -124,7 +124,6 @@ class CanvasRenderer {
         this.voiceColors = this.palettes[this.currentPaletteIndex];
         this.bgColor = "#07080A"; 
 
-        // תוקן: Architectural הוא הדיפולט החדש
         this.analyticalView = "architectural"; 
         this._layout = { width: 1, height: 1, topPad: 40, bottomPad: 48, usableHeight: 1, midiSpan: 1 };
         this.resizeForDpi();
@@ -243,14 +242,12 @@ class CanvasRenderer {
         ctx.fillStyle = rg; ctx.fillRect(l.width-fade,0,fade,l.height);
     }
 
-    // תוקן: רציפות הקווים עכשיו מושלמת
     _drawContour(now, l, visibleNotes) {
         const ctx = this.ctx; ctx.save();
         for (let v = 0; v < 5; v++) {
             const vn = this._voiceNotes[v]; if (!vn || vn.length < 2) continue;
             ctx.beginPath(); let first = true;
             vn.forEach(n => {
-                // מצייר את הקווים לכל מה שמופיע בחלון הוויזואלי (גם בעתיד הקרוב)
                 if (n.time < l.startTime - 1 || n.time > l.endTime + 1) return;
                 const x = this._nx(n.time, now, l), y = this._ny(n.midi, l);
                 if (first) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -335,6 +332,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch(e) { renderer.drawPlaceholder("Error loading library"); }
 
     playBtn.onclick = async () => {
+        // תוקן: אם totalDuration הוא 0, זה סימן שצריך לטעון שיר חדש
         if (renderer.totalDuration === 0) {
             const buf = library.getWork(trackSel.value);
             const { notes, totalDuration } = await audio.loadMidi(buf);
@@ -347,6 +345,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     pauseBtn.onclick = () => { audio.pause(); renderer.stop(); playBtn.disabled = false; pauseBtn.disabled = true; };
     stopBtn.onclick = () => { audio.stop(); renderer.stop(); prog.style.width = "0%"; renderer.drawFrame(0); playBtn.disabled = false; pauseBtn.disabled = true; };
     
+    // תוקן: איפוס הנתונים במעבר בין שירים
+    trackSel.onchange = () => {
+        audio.stop();
+        renderer.stop();
+        renderer.totalDuration = 0; // הכרחי כדי שה-Play הבא יטעין את השיר החדש
+        prog.style.width = "0%";
+        seek.value = 0;
+        renderer.drawFrame(0);
+        playBtn.disabled = false;
+        pauseBtn.disabled = true;
+        stopBtn.disabled = true;
+    };
+
     renderer.onProgress = (p) => { prog.style.width = (p*100)+"%"; seek.value = p*1000; };
     
     seek.onpointerdown = () => { audio.pause(); renderer.stop(); };
