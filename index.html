@@ -226,6 +226,9 @@
         #play-toggle:active:not(:disabled) { transform: scale(0.98); }
         #play-toggle:disabled { opacity: 0.25; cursor: not-allowed; }
 
+        /* CSS לכפתור roadmap: */
+        #roadmap-toggle.active { color: #C9A961; border-color: #C9A961; }
+
         /* ═══ Scrubber ═══ */
         #scrubber {
             position: relative;
@@ -413,13 +416,24 @@
                 <option value="voice-constellation">Voice Constellation</option>
             </select>
         </div>
+        
         <button id="play-toggle" disabled>Play</button>
+        <button id="roadmap-toggle">Roadmap</button>
+
         <div id="scrubber">
             <div id="scrubber-track"></div>
             <div id="scrubber-progress"></div>
             <input type="range" id="seek-slider" min="0" max="1000" value="0" disabled aria-label="Seek">
         </div>
+        
+        <div id="tonal-map-wrap" style="display:none; height:14px; border-radius:3px; overflow:hidden; margin-top:4px;">
+            <canvas id="tonal-map-canvas" style="display:block; width:100%; height:100%;"></canvas>
+        </div>
+
         <div id="time-display">0:00 / 0:00</div>
+
+        <input id="dynamics-slider" type="range" min="0" max="100" step="1" value="40">
+        <span id="dynamics-label"></span>
     </div>
 
     <footer>Johann Sebastian Bach · 1685–1750</footer>
