@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Bach Visualizer — Master Edition</title>
+    <title>Bach · Music Visualization</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
@@ -16,10 +16,11 @@
         .input-group { display: flex; align-items: center; gap: 10px; }
         label { font-size: 10px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; }
         select, button { font-family: 'EB Garamond', serif; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; padding: 8px 16px; background: transparent; color: white; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; cursor: pointer; transition: all 0.2s ease; outline: none; }
-        select { appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23D4A843%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 8px auto; max-width: 250px; }
-        button:hover:not(:disabled), select:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); background: rgba(212, 168, 67, 0.05); }
+        select { appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23D4A843%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 8px auto; }
+        button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); background: rgba(212, 168, 67, 0.05); }
+        button:disabled { opacity: 0.2; cursor: not-allowed; }
         #palette-picker-container { display: flex; gap: 6px; align-items: center; }
-        .palette-btn { display: flex; height: 20px; width: 50px; border-radius: 3px; overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+        .palette-btn { display: flex; height: 20px; width: 60px; border-radius: 3px; overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
         .palette-btn.active { border-color: white; transform: scale(1.1); }
         .palette-color-strip { flex: 1; height: 100%; }
         .brand { margin-left: auto; font-style: italic; font-size: 13px; color: var(--gold); opacity: 0.6; }
@@ -27,7 +28,6 @@
         #progress-fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--gold); width: 0%; pointer-events: none; }
         #seek-slider { -webkit-appearance: none; width: 100%; height: 100%; background: transparent; outline: none; margin: 0; position: absolute; top: 0; cursor: pointer; }
         #seek-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
-        @media (max-width: 768px) { #controls { padding: 10px; gap: 10px; } .input-group { width: 48%; flex-direction: column; align-items: flex-start; } .button-group { display: flex; width: 100%; gap: 5px; margin-top: 8px; } button { flex: 1; padding: 10px 2px; } .brand { display: none; } #palette-picker-container { width: 100%; justify-content: center; margin-top: 12px; } }
     </style>
 </head>
 <body>
@@ -51,7 +51,7 @@
                 <button id="btn-stop" disabled>Stop</button>
             </div>
             <div id="palette-picker-container"></div>
-            <div class="brand">Bach · Master Edition</div>
+            <div class="brand">Bach · Music Visualization</div>
         </div>
         <div id="scrubber-container">
             <div id="progress-fill"></div>
