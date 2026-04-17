@@ -74,6 +74,86 @@
             font-variant-numeric: tabular-nums;
         }
 
+        /* ═══ Palette picker ═══ */
+        .palette-wrapper {
+            position: relative;
+            flex-shrink: 0;
+            align-self: center;
+        }
+        #palette-toggle {
+            background: transparent;
+            border: 1px solid var(--ink-faint);
+            width: 36px; height: 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            overflow: hidden;
+            transition: border-color 0.25s ease;
+            -webkit-appearance: none;
+        }
+        #palette-toggle:hover { border-color: var(--gold); }
+        #palette-toggle .strip { flex: 1; height: 100%; }
+
+        #palette-menu {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            background: var(--bg-warm);
+            border: 1px solid var(--ink-faint);
+            border-radius: 4px;
+            padding: 8px;
+            display: none;
+            flex-direction: column;
+            gap: 2px;
+            z-index: 100;
+            min-width: 200px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.7);
+        }
+        #palette-menu.open { display: flex; }
+        .palette-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 8px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            color: var(--ink-dim);
+            font-family: 'EB Garamond', serif;
+            font-size: 13px;
+            font-style: italic;
+            letter-spacing: 0.3px;
+            transition: all 0.2s ease;
+            -webkit-appearance: none;
+            text-align: left;
+            width: 100%;
+        }
+        .palette-option:hover {
+            color: var(--ink);
+            background: rgba(232, 212, 162, 0.04);
+        }
+        .palette-option.active {
+            color: var(--gold);
+        }
+        .palette-option.active::after {
+            content: "·";
+            margin-left: auto;
+            color: var(--gold);
+            font-size: 18px;
+            line-height: 1;
+        }
+        .palette-swatches {
+            display: flex;
+            width: 48px;
+            height: 14px;
+            border-radius: 2px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .palette-swatches .strip { flex: 1; }
+
         /* ═══ Canvas ═══ */
         #visualizer {
             flex: 1;
@@ -254,13 +334,26 @@
         @media (max-width: 640px) {
             header {
                 padding: 18px 20px 12px;
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 4px;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 12px;
                 min-height: 56px;
             }
-            #work-title { font-size: 18px; white-space: normal; line-height: 1.25; }
-            #work-meta { font-size: 9px; letter-spacing: 2.5px; }
+            #work-title {
+                font-size: 18px;
+                white-space: normal;
+                line-height: 1.25;
+                flex: 1 1 auto;
+                order: 1;
+            }
+            .palette-wrapper { order: 2; }
+            #work-meta {
+                font-size: 9px;
+                letter-spacing: 2.5px;
+                order: 3;
+                flex-basis: 100%;
+            }
+            #palette-menu { right: 0; left: auto; min-width: 180px; }
             #controls {
                 padding: 10px 20px 6px;
                 gap: 12px;
@@ -299,6 +392,10 @@
     <header>
         <div id="work-title" class="loading breathing">Preparing the score</div>
         <div id="work-meta"></div>
+        <div class="palette-wrapper">
+            <button id="palette-toggle" aria-label="Change palette" title="Palette"></button>
+            <div id="palette-menu"></div>
+        </div>
     </header>
 
     <canvas id="visualizer"></canvas>
@@ -313,7 +410,7 @@
             <select id="view-selector">
                 <option value="architectural" selected>Architectural</option>
                 <option value="melodic-contour">Melodic Contour</option>
-                <option value="harmonic-lattice">Harmonic Lattice</option>
+                <option value="voice-constellation">Voice Constellation</option>
             </select>
         </div>
         <button id="play-toggle" disabled>Play</button>
