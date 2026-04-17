@@ -30,7 +30,7 @@
             flex-direction: column;
             height: 100vh;
             overflow: hidden;
-            touch-action: none; /* מונע גלילה מיותרת של הדף במובייל */
+            touch-action: none;
         }
 
         #toolbar {
@@ -46,7 +46,7 @@
             display: flex;
             gap: 24px;
             align-items: center;
-            flex-wrap: wrap; /* מאפשר שבירת שורות */
+            flex-wrap: wrap;
         }
 
         .input-group {
@@ -85,19 +85,6 @@
             background-position: right 14px top 50%;
             background-size: 10px auto;
             max-width: 320px;
-            text-overflow: ellipsis;
-        }
-
-        select optgroup {
-            background: var(--bg-color);
-            color: var(--accent-gold);
-            font-style: italic;
-        }
-
-        select option {
-            background: var(--panel-color);
-            color: white;
-            font-style: normal;
         }
 
         button:hover:not(:disabled), select:hover:not(:disabled) {
@@ -109,7 +96,6 @@
         button:disabled, select:disabled {
             opacity: 0.2;
             cursor: not-allowed;
-            border-color: rgba(255, 255, 255, 0.05);
         }
 
         #palette-picker-container {
@@ -121,159 +107,36 @@
 
         .palette-btn {
             display: flex;
-            height: 28px; /* מוגדל מעט למגע נוח יותר */
+            height: 24px;
             width: 80px;
             border-radius: 4px;
             overflow: hidden;
             cursor: pointer;
             border: 1px solid rgba(255,255,255,0.15);
             transition: all 0.2s ease;
-            background: #222;
         }
 
         .palette-btn.active {
             border-color: white;
             transform: scale(1.05);
-            box-shadow: 0 0 8px rgba(255,255,255,0.2);
         }
 
-        .palette-color-strip {
-            flex: 1;
-            height: 100%;
-        }
+        .palette-color-strip { flex: 1; height: 100%; }
 
-        .brand {
-            margin-left: auto;
-            font-style: italic;
-            font-size: 14px;
-            color: var(--accent-gold);
-            opacity: 0.7;
-        }
+        .brand { margin-left: auto; font-style: italic; font-size: 14px; color: var(--accent-gold); opacity: 0.7; }
 
-        #zip-fallback {
-            display: none;
-            align-items: center;
-            gap: 12px;
-            border-left: 1px solid rgba(255,255,255,0.1);
-            padding-left: 24px;
-            margin-left: auto;
-        }
+        #scrubber-container { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.05); position: relative; }
+        #progress-fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--accent-gold); width: 0%; pointer-events: none; }
+        #seek-slider { -webkit-appearance: none; width: 100%; height: 100%; background: transparent; outline: none; margin: 0; position: absolute; top: 0; cursor: pointer; }
+        #seek-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent-gold); }
 
-        #zip-fallback label {
-            color: var(--alert-red);
-            font-weight: 500;
-        }
-
-        #zip-fallback input[type="file"]::file-selector-button {
-            font-family: 'EB Garamond', serif;
-            font-size: 11px;
-            text-transform: uppercase;
-            padding: 6px 12px;
-            background: rgba(224, 123, 84, 0.1);
-            color: var(--alert-red);
-            border: 1px solid var(--alert-red);
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        #scrubber-container {
-            width: 100%;
-            height: 8px; /* עבה יותר כדי שיהיה נוח ללחוץ באצבע */
-            background: rgba(255, 255, 255, 0.05);
-            position: relative;
-        }
-
-        #seek-slider {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            outline: none;
-            margin: 0;
-            position: absolute;
-            top: 0;
-            cursor: pointer;
-        }
-
-        #seek-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px; /* כפתור גרירה גדול יותר */
-            height: 16px;
-            border-radius: 50%;
-            background: var(--accent-gold);
-            cursor: pointer;
-            box-shadow: 0 0 10px rgba(212, 168, 67, 0.5);
-            transition: transform 0.1s;
-        }
-
-        #progress-fill {
-            position: absolute;
-            top: 0;
-            left: 0;
-            height: 100%;
-            background: var(--accent-gold);
-            width: 0%;
-            pointer-events: none;
-            opacity: 0.8;
-        }
-
-        #visualizer {
-            flex: 1;
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        /* 📱 RESPONSIVE MOBILE STYLES 📱 */
         @media (max-width: 768px) {
-            #controls {
-                padding: 12px;
-                gap: 12px;
-                justify-content: space-between;
-            }
-
-            .input-group {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 4px;
-                width: 48%; /* תופס חצי מסך */
-            }
-
-            select {
-                width: 100%;
-                font-size: 14px; /* קריא יותר במובייל */
-            }
-
-            .button-group {
-                display: flex;
-                width: 100%;
-                gap: 8px;
-            }
-
-            button {
-                flex: 1;
-                padding: 12px 8px; /* כפתורים גבוהים יותר */
-            }
-
-            #palette-picker-container {
-                margin-left: 0;
-                width: 100%;
-                justify-content: center;
-                flex-wrap: wrap;
-                margin-top: 8px;
-            }
-
-            .brand {
-                display: none; /* מסתיר את הלוגו הטקסטואלי כדי לחסוך מקום */
-            }
-
-            #zip-fallback {
-                border-left: none;
-                padding-left: 0;
-                width: 100%;
-                justify-content: center;
-            }
+            #controls { padding: 12px; gap: 12px; }
+            .input-group { width: 48%; flex-direction: column; align-items: flex-start; }
+            .button-group { display: flex; width: 100%; gap: 8px; }
+            button { flex: 1; padding: 12px 4px; }
+            .brand { display: none; }
+            #palette-picker-container { width: 100%; justify-content: center; }
         }
     </style>
 </head>
@@ -284,8 +147,8 @@
             <div class="input-group">
                 <label for="view-selector">Perspective</label>
                 <select id="view-selector">
+                    <option value="architectural" selected>Architectural</option>
                     <option value="melodic-contour">Melodic Contour</option>
-                    <option value="architectural">Architectural</option>
                     <option value="harmonic-lattice">Harmonic Lattice</option>
                 </select>
             </div>
@@ -293,7 +156,7 @@
             <div class="input-group">
                 <label for="track-selector">Work</label>
                 <select id="track-selector" disabled>
-                    <option value="">LOADING LIBRARY...</option>
+                    <option value="">Loading Library...</option>
                 </select>
             </div>
             
@@ -304,11 +167,6 @@
             </div>
 
             <div id="palette-picker-container"></div>
-
-            <div id="zip-fallback">
-                <label>Server Error. Load ZIP manually:</label>
-                <input type="file" id="zip-upload" accept=".zip" />
-            </div>
 
             <div class="brand">J.S. Bach · Counterpoint Engine</div>
         </div>
