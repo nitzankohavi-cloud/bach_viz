@@ -1,8 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach · A quiet window into counterpoint
+// Bach · A quiet window into counterpoint · v3
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ─── Palette: "Candlelight" (Vermeer-inspired) ─────────────────────────────────
 const PALETTE = {
     bg: "#0A0908",
     bgWarm: "#0F0D0A",
@@ -13,7 +12,10 @@ const PALETTE = {
     gold: "#C9A961"
 };
 
-// ─── Utility: format seconds as M:SS ──────────────────────────────────────────
+const MEASURES_VISIBLE = 8;
+const SILENT_INTRO = 1.5; // seconds before first note on fresh play
+const WHITE_KEY_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+
 const formatTime = (s) => {
     if (!isFinite(s) || s < 0) s = 0;
     const m = Math.floor(s / 60);
@@ -21,28 +23,34 @@ const formatTime = (s) => {
     return `${m}:${sec.toString().padStart(2, '0')}`;
 };
 
-// ─── Parse filename into elegant title ────────────────────────────────────────
 const parseTitle = (filename) => {
     let name = filename.split('/').pop().replace(/\.(mid|midi)$/i, '');
-    name = name.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
-    // Extract BWV
+    name = name.replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
     const bwvMatch = name.match(/BWV\s*(\d+[a-z]?)/i);
     const bwv = bwvMatch ? `BWV ${bwvMatch[1]}` : '';
     const title = name.replace(/BWV\s*\d+[a-z]?/i, '').replace(/\s+/g, ' ').trim();
-    // Capitalize
-    const pretty = title.split(' ').map(w => {
-        if (w.length <= 2 && w.toLowerCase() !== 'no') return w.toLowerCase();
-        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-    }).join(' ');
-    return { title: pretty || 'Untitled', meta: bwv };
+    // Detect key
+    const keyMatch = title.match(/in\s+([A-G][#b♯♭]?)\s*(major|minor|m)?/i);
+    let tonicMidi = null;
+    if (keyMatch) {
+        const pcMap = { C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11 };
+        const root = keyMatch[1].replace('♯','#').replace('♭','b');
+        if (pcMap[root] !== undefined) tonicMidi = pcMap[root];
+    }
+    const pretty = title.split(' ').map(w =>
+        w.length <= 2 && w.toLowerCase() !== 'no'
+            ? w.toLowerCase()
+            : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    ).join(' ');
+    return { title: pretty || 'Untitled', meta: bwv, tonic: tonicMidi };
 };
 
-// ═══ Bach Library ══════════════════════════════════════════════════════════════
+// ═══ Library ═══════════════════════════════════════════════════════════════════
 class BachLibrary {
     constructor() { this.works = new Map(); this.tree = {}; }
     async load(url) {
         const resp = await fetch(url);
-        if (!resp.ok) throw new Error("Failed to fetch bach.zip: " + resp.status);
+        if (!resp.ok) throw new Error("Failed to fetch: " + resp.status);
         const zip = await window.JSZip.loadAsync(await resp.blob());
         const files = [];
         zip.forEach((rel, entry) => {
@@ -53,9 +61,7 @@ class BachLibrary {
             this.tree[folder].push(clean);
             files.push({ name: clean, entry });
         });
-        for (let f of files) {
-            this.works.set(f.name, await f.entry.async("arraybuffer"));
-        }
+        for (let f of files) this.works.set(f.name, await f.entry.async("arraybuffer"));
     }
 }
 
@@ -63,9 +69,9 @@ class BachLibrary {
 class AudioEngine {
     constructor() {
         this.sampler = new Tone.Sampler({
-            urls: { A0: "A0.mp3", C1: "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3",
-                    A1: "A1.mp3", C2: "C2.mp3", A3: "A3.mp3", C4: "C4.mp3",
-                    A5: "A5.mp3", C6: "C6.mp3" },
+            urls: { A0:"A0.mp3", C1:"C1.mp3", "D#1":"Ds1.mp3", "F#1":"Fs1.mp3",
+                    A1:"A1.mp3", C2:"C2.mp3", A3:"A3.mp3", C4:"C4.mp3",
+                    A5:"A5.mp3", C6:"C6.mp3" },
             baseUrl: "https://tonejs.github.io/audio/salamander/",
             release: 1.2
         }).toDestination();
@@ -74,16 +80,13 @@ class AudioEngine {
         this.scheduledIds = []; this.tempo = 80;
     }
     loadTrack(buf) {
-        const MidiCtor = window.Midi;
-        const midi = new MidiCtor(buf);
-        this.tempo = (midi.header.tempos && midi.header.tempos[0]?.bpm) || 80;
+        const midi = new window.Midi(buf);
+        this.tempo = (midi.header.tempos?.[0]?.bpm) || 80;
         const notes = []; let dur = 0;
         midi.tracks.forEach((t, i) => {
             t.notes.forEach(n => {
-                notes.push({
-                    time: n.time, duration: n.duration,
-                    midi: n.midi, velocity: n.velocity, track: i
-                });
+                notes.push({ time: n.time, duration: n.duration,
+                             midi: n.midi, velocity: n.velocity, track: i });
                 dur = Math.max(dur, n.time + n.duration);
             });
         });
@@ -95,12 +98,13 @@ class AudioEngine {
         this.scheduledIds = [];
         Tone.Transport.cancel(0);
     }
-    async play(startAt = this.pauseOffset) {
+    async play(startAt = this.pauseOffset, useIntro = false) {
         if (Tone.context.state !== 'running') await Tone.start();
         Tone.Transport.stop();
         this.clearScheduled();
         this.sampler.releaseAll();
-        Tone.Transport.seconds = startAt;
+        // Silent intro: set Transport back so notes play at their original time
+        Tone.Transport.seconds = useIntro ? (startAt - SILENT_INTRO) : startAt;
         this.notes.forEach(n => {
             if (n.time < startAt - 0.01) return;
             const id = Tone.Transport.schedule(t => {
@@ -116,7 +120,7 @@ class AudioEngine {
     }
     pause() {
         this.isPlaying = false;
-        this.pauseOffset = Tone.Transport.seconds;
+        this.pauseOffset = Math.max(0, Tone.Transport.seconds);
         Tone.Transport.pause();
         this.sampler.releaseAll();
     }
@@ -137,17 +141,22 @@ class Renderer {
         this.notes = []; this.totalTime = 0; this.isAnimating = false;
         this.view = "architectural";
         this.minMidi = 36; this.maxMidi = 84;
-        this.tempo = 80;
-        this.startTime = 0; // when playback started (for fade-in)
-        this.pxPerSec = 140;
+        this.tempo = 80; this.measureDur = 2;
+        this.startTime = 0;
+        this.smoothNow = 0;
+        this.hoveredVoice = null;
+        this.tonicPc = null;
     }
-    setup(notes, dur, tempo) {
-        this.notes = notes; this.totalTime = dur; this.tempo = tempo || 80;
+    setup(notes, dur, tempo, tonicPc) {
+        this.notes = notes; this.totalTime = dur;
+        this.tempo = tempo || 80;
+        this.measureDur = (60 / this.tempo) * 4;
+        this.tonicPc = tonicPc;
+        this.smoothNow = 0;
         if (notes.length === 0) return;
         let min = 127, max = 0;
         notes.forEach(n => { min = Math.min(min, n.midi); max = Math.max(max, n.midi); });
-        this.minMidi = min - 3; this.maxMidi = max + 3;
-        // Pre-sort notes by voice for melodic contour
+        this.minMidi = min - 2; this.maxMidi = max + 2;
         this.voiceGroups = {};
         notes.forEach(n => {
             if (!this.voiceGroups[n.track]) this.voiceGroups[n.track] = [];
@@ -169,56 +178,68 @@ class Renderer {
         this.ctx.fillRect(0, 0, w, h);
     }
 
-    // ─── Convert MIDI pitch to Y coordinate ───────────────────────────────────
+    // Piano-correct Y position
+    whiteIndexOf(midi) {
+        const oct = Math.floor(midi / 12);
+        const s = midi % 12;
+        let idx = 0;
+        WHITE_KEY_SEMITONES.forEach(w => { if (w < s) idx++; });
+        return oct * 7 + idx;
+    }
     midiToY(midi, top, height) {
-        const span = (this.maxMidi - this.minMidi) || 1;
-        return top + (1 - (midi - this.minMidi) / span) * height;
+        const minW = this.whiteIndexOf(this.minMidi);
+        const maxW = this.whiteIndexOf(this.maxMidi);
+        const span = maxW - minW || 1;
+        const isWhite = WHITE_KEY_SEMITONES.includes(midi % 12);
+        const myW = this.whiteIndexOf(midi) + (isWhite ? 0 : 0.5);
+        return top + (1 - (myW - minW) / span) * height;
     }
 
-    // ─── Draw pitch reference (C notes) on left side ──────────────────────────
-    drawPitchAxis(w, h, playheadX, top, height) {
+    drawPitchAxis(w, h, top, height) {
         this.ctx.save();
         this.ctx.font = "italic 9px 'EB Garamond', serif";
         this.ctx.fillStyle = PALETTE.inkFaint;
         this.ctx.textAlign = "left";
         this.ctx.textBaseline = "middle";
-        // Draw C notes in range
         for (let midi = 12; midi <= 108; midi += 12) {
             if (midi < this.minMidi || midi > this.maxMidi) continue;
             const y = this.midiToY(midi, top, height);
             const octave = Math.floor(midi / 12) - 1;
-            this.ctx.fillText(`C${octave}`, 12, y);
-            // Subtle horizontal line
-            this.ctx.strokeStyle = PALETTE.inkFaint;
+            this.ctx.fillStyle = "rgba(232, 212, 162, 0.22)";
+            this.ctx.fillText(`C${octave}`, 14, y);
+            this.ctx.strokeStyle = "rgba(232, 212, 162, 0.05)";
             this.ctx.lineWidth = 0.5;
             this.ctx.beginPath();
-            this.ctx.moveTo(36, y);
+            this.ctx.moveTo(38, y);
             this.ctx.lineTo(w - 20, y);
             this.ctx.stroke();
         }
         this.ctx.restore();
     }
 
-    // ─── Draw time grid (measure lines) ───────────────────────────────────────
-    drawTimeGrid(now, w, h, playheadX, top, height) {
+    drawTimeGrid(now, w, h, playheadX, top, height, pxPerSec) {
         const beatDur = 60 / this.tempo;
-        const measureDur = beatDur * 4; // assume 4/4
-        const visibleSeconds = (w - playheadX) / this.pxPerSec + 1;
-
-        // Find first measure boundary at or after (now - 1)
-        const startT = Math.floor((now - 1) / measureDur) * measureDur;
-        const endT = now + visibleSeconds;
+        const measureDur = this.measureDur;
+        const visibleSec = (w - playheadX) / pxPerSec + 1;
+        const startT = Math.floor((now - 1.5) / beatDur) * beatDur;
+        const endT = now + visibleSec;
 
         this.ctx.save();
         this.ctx.lineWidth = 0.5;
         for (let t = startT; t <= endT; t += beatDur) {
-            const x = playheadX + (t - now) * this.pxPerSec;
-            if (x < 36 || x > w - 20) continue;
-            const isMeasure = Math.abs((t % measureDur)) < 0.001 ||
-                              Math.abs((t % measureDur) - measureDur) < 0.001;
-            this.ctx.strokeStyle = isMeasure
-                ? "rgba(232, 212, 162, 0.08)"
-                : "rgba(232, 212, 162, 0.03)";
+            const x = playheadX + (t - now) * pxPerSec;
+            if (x < 40 || x > w - 20) continue;
+            const measurePhase = ((t / measureDur) + 1e-6) % 1;
+            const isMeasure = measurePhase < 0.01 || measurePhase > 0.99;
+            const isStrongBeat = Math.abs((t / beatDur) % 2) < 0.01; // beats 1, 3
+            const edgeFade = Math.min(1,
+                Math.min(x - 40, w - 20 - x) / 50
+            );
+            let baseAlpha;
+            if (isMeasure)       baseAlpha = 0.10;
+            else if (isStrongBeat) baseAlpha = 0.045;
+            else                  baseAlpha = 0.025;
+            this.ctx.strokeStyle = `rgba(232, 212, 162, ${baseAlpha * Math.max(0, edgeFade)})`;
             this.ctx.beginPath();
             this.ctx.moveTo(x, top);
             this.ctx.lineTo(x, top + height);
@@ -227,12 +248,11 @@ class Renderer {
         this.ctx.restore();
     }
 
-    // ─── Draw playhead ────────────────────────────────────────────────────────
     drawPlayhead(x, top, height) {
         this.ctx.save();
         const grad = this.ctx.createLinearGradient(0, top, 0, top + height);
         grad.addColorStop(0, "rgba(201, 169, 97, 0)");
-        grad.addColorStop(0.5, "rgba(201, 169, 97, 0.35)");
+        grad.addColorStop(0.5, "rgba(201, 169, 97, 0.38)");
         grad.addColorStop(1, "rgba(201, 169, 97, 0)");
         this.ctx.strokeStyle = grad;
         this.ctx.lineWidth = 1;
@@ -243,40 +263,61 @@ class Renderer {
         this.ctx.restore();
     }
 
-    // ─── Main draw ────────────────────────────────────────────────────────────
-    draw(now) {
+    // Find note at pixel coords (for hover)
+    noteAt(mx, my, now, w, h) {
+        const top = 24, bottom = 24;
+        const height = h - top - bottom;
+        const playheadX = w < 768 ? 80 : Math.min(220, w * 0.18);
+        const pxPerSec = (w - playheadX - 40) / (MEASURES_VISIBLE * this.measureDur);
+        for (const n of this.notes) {
+            const x = playheadX + (n.time - now) * pxPerSec;
+            const noteW = Math.max(n.duration * pxPerSec, 2);
+            if (mx < x || mx > x + noteW) continue;
+            const y = this.midiToY(n.midi, top, height);
+            const weight = Math.min(1, n.duration / this.measureDur);
+            const noteH = 3 + weight * 8;
+            if (Math.abs(my - y) <= noteH / 2 + 2) return n;
+        }
+        return null;
+    }
+
+    draw(audioTime) {
         const { w, h } = this.resize();
         this.ctx.fillStyle = PALETTE.bg;
         this.ctx.fillRect(0, 0, w, h);
 
         if (this.notes.length === 0) return;
 
-        const top = 24;
-        const bottom = 24;
+        // Smooth interpolation for visual (not audio)
+        if (this.isAnimating) {
+            this.smoothNow += (audioTime - this.smoothNow) * 0.3;
+        } else {
+            this.smoothNow = audioTime;
+        }
+        const now = this.smoothNow;
+
+        const top = 24, bottom = 24;
         const height = h - top - bottom;
         const playheadX = w < 768 ? 80 : Math.min(220, w * 0.18);
+        const pxPerSec = (w - playheadX - 40) / (MEASURES_VISIBLE * this.measureDur);
 
-        // Fade-in during first 1.5s of playback
-        const sinceStart = now - this.startTime;
+        const sinceStart = audioTime - this.startTime;
         const globalFade = Math.min(1, Math.max(0, sinceStart / 1.5));
-
-        // End-of-piece fade
-        const endFade = now > this.totalTime - 2
-            ? Math.max(0, 1 - (now - (this.totalTime - 2)) / 2)
-            : 1;
+        const endFade = audioTime > this.totalTime - 2
+            ? Math.max(0, 1 - (audioTime - (this.totalTime - 2)) / 2) : 1;
 
         this.ctx.globalAlpha = globalFade * endFade;
 
-        // Reference grid (always first, faint)
-        this.drawPitchAxis(w, h, playheadX, top, height);
-        this.drawTimeGrid(now, w, h, playheadX, top, height);
+        this.drawPitchAxis(w, h, top, height);
 
-        // Route to view renderer
-        if (this.view === "architectural")    this.drawArchitectural(now, w, h, playheadX, top, height);
-        else if (this.view === "melodic-contour") this.drawMelodicContour(now, w, h, playheadX, top, height);
-        else if (this.view === "harmonic-lattice") this.drawHarmonicLattice(now, w, h);
+        if (this.view !== "harmonic-lattice") {
+            this.drawTimeGrid(now, w, h, playheadX, top, height, pxPerSec);
+        }
 
-        // Playhead (not in harmonic lattice)
+        if (this.view === "architectural")    this.drawArchitectural(now, w, h, playheadX, top, height, pxPerSec);
+        else if (this.view === "melodic-contour") this.drawMelodicContour(now, w, h, playheadX, top, height, pxPerSec);
+        else if (this.view === "harmonic-lattice") this.drawHarmonicLattice(audioTime, w, h);
+
         if (this.view !== "harmonic-lattice") {
             this.drawPlayhead(playheadX, top, height);
         }
@@ -284,56 +325,62 @@ class Renderer {
         this.ctx.globalAlpha = 1;
 
         // End title
-        if (now >= this.totalTime && this.totalTime > 0) {
-            const fadeOut = Math.max(0, 1 - (now - this.totalTime) / 3);
-            this.ctx.save();
-            this.ctx.globalAlpha = fadeOut * 0.5;
-            this.ctx.fillStyle = PALETTE.ink;
-            this.ctx.font = "italic 18px 'EB Garamond', serif";
-            this.ctx.textAlign = "center";
-            this.ctx.textBaseline = "middle";
-            this.ctx.fillText("— fin —", w / 2, h / 2);
-            this.ctx.restore();
+        if (audioTime >= this.totalTime && this.totalTime > 0) {
+            const fadeOut = Math.max(0, 1 - (audioTime - this.totalTime) / 3);
+            if (fadeOut > 0) {
+                this.ctx.save();
+                this.ctx.globalAlpha = fadeOut * 0.5;
+                this.ctx.fillStyle = PALETTE.ink;
+                this.ctx.font = "italic 18px 'EB Garamond', serif";
+                this.ctx.textAlign = "center";
+                this.ctx.textBaseline = "middle";
+                this.ctx.fillText("— fin —", w / 2, h / 2);
+                this.ctx.restore();
+            }
         }
     }
 
-    // ─── View: Architectural ──────────────────────────────────────────────────
-    drawArchitectural(now, w, h, playheadX, top, height) {
+    drawArchitectural(now, w, h, playheadX, top, height, pxPerSec) {
         const lookBack = 3.5;
-        const lookForward = (w - playheadX) / this.pxPerSec;
+        const lookForward = (w - playheadX) / pxPerSec;
         const visible = this.notes.filter(n =>
             (n.time + n.duration) > (now - lookBack) && n.time < (now + lookForward)
         );
 
         visible.forEach(n => {
-            const x = playheadX + (n.time - now) * this.pxPerSec;
-            const noteW = Math.max(n.duration * this.pxPerSec, 2);
+            const x = playheadX + (n.time - now) * pxPerSec;
+            const noteW = Math.max(n.duration * pxPerSec, 2);
             const y = this.midiToY(n.midi, top, height);
             const active = now >= n.time && now <= n.time + n.duration;
             const past = now > n.time + n.duration;
 
-            // Opacity: future notes subtle, active bright, past fading slowly
             let alpha;
             if (active) alpha = 1;
-            else if (past) alpha = Math.max(0, 0.35 * (1 - (now - (n.time + n.duration)) / lookBack));
+            else if (past) alpha = Math.max(0, 0.32 * (1 - (now - (n.time + n.duration)) / lookBack));
             else alpha = 0.55;
 
-            // Height based on velocity (subtle, between 5 and 10)
-            const noteH = 5 + (n.velocity || 0.7) * 5;
+            const vel = n.velocity || 0.7;
+            alpha *= 0.55 + vel * 0.45;
+
+            // Voice hover dim
+            if (this.hoveredVoice !== null && this.hoveredVoice !== n.track) {
+                alpha *= 0.25;
+            } else if (this.hoveredVoice === n.track) {
+                alpha = Math.min(1, alpha * 1.3);
+            }
+
+            const weight = Math.min(1, n.duration / this.measureDur);
+            const noteH = 3 + weight * 8;
             const color = PALETTE.voices[n.track % PALETTE.voices.length];
 
-            this.ctx.globalAlpha = alpha * this.ctx.globalAlpha / this.ctx.globalAlpha;
-
-            // Hmm, simpler: use save/restore
             this.ctx.save();
             this.ctx.globalAlpha = alpha;
             this.ctx.fillStyle = color;
-            this.roundRect(x, y - noteH / 2, noteW, noteH, 1.5);
+            this.roundRect(x, y - noteH / 2, noteW, noteH, Math.min(1.5, noteH / 2));
             this.ctx.fill();
 
-            // Inner glow on active note
             if (active) {
-                this.ctx.strokeStyle = "rgba(255, 248, 220, 0.4)";
+                this.ctx.strokeStyle = "rgba(255, 248, 220, 0.45)";
                 this.ctx.lineWidth = 0.5;
                 this.roundRect(x + 0.5, y - noteH/2 + 0.5, noteW - 1, noteH - 1, 1);
                 this.ctx.stroke();
@@ -342,12 +389,10 @@ class Renderer {
         });
     }
 
-    // ─── View: Melodic Contour ────────────────────────────────────────────────
-    drawMelodicContour(now, w, h, playheadX, top, height) {
+    drawMelodicContour(now, w, h, playheadX, top, height, pxPerSec) {
         const lookBack = 4;
-        const lookForward = (w - playheadX) / this.pxPerSec;
+        const lookForward = (w - playheadX) / pxPerSec;
 
-        // Draw each voice as connected line
         Object.entries(this.voiceGroups).forEach(([track, notes]) => {
             const color = PALETTE.voices[track % PALETTE.voices.length];
             const visible = notes.filter(n =>
@@ -355,25 +400,33 @@ class Renderer {
             );
             if (visible.length < 2) return;
 
+            const hasActive = visible.some(n => now >= n.time && now <= n.time + n.duration);
+            const trackNum = parseInt(track);
+            let voiceAlpha = hasActive ? 0.7 : 0.32;
+            let lineWidth = hasActive ? 1.3 : 0.75;
+            if (this.hoveredVoice !== null) {
+                if (this.hoveredVoice === trackNum) { voiceAlpha = 0.95; lineWidth = 1.6; }
+                else { voiceAlpha *= 0.3; }
+            }
+
             this.ctx.save();
             this.ctx.strokeStyle = color;
-            this.ctx.lineWidth = 1;
-            this.ctx.globalAlpha = 0.5;
+            this.ctx.lineWidth = lineWidth;
+            this.ctx.globalAlpha = voiceAlpha;
             this.ctx.lineCap = "round";
             this.ctx.lineJoin = "round";
             this.ctx.beginPath();
             visible.forEach((n, i) => {
-                const x = playheadX + (n.time - now) * this.pxPerSec;
+                const x = playheadX + (n.time - now) * pxPerSec;
                 const y = this.midiToY(n.midi, top, height);
                 if (i === 0) this.ctx.moveTo(x, y); else this.ctx.lineTo(x, y);
             });
             this.ctx.stroke();
 
-            // Active note highlight
             visible.forEach(n => {
                 const active = now >= n.time && now <= n.time + n.duration;
                 if (!active) return;
-                const x = playheadX + (n.time - now) * this.pxPerSec;
+                const x = playheadX + (n.time - now) * pxPerSec;
                 const y = this.midiToY(n.midi, top, height);
                 this.ctx.globalAlpha = 1;
                 this.ctx.fillStyle = color;
@@ -385,7 +438,6 @@ class Renderer {
         });
     }
 
-    // ─── View: Harmonic Lattice (Circle of Fifths) ────────────────────────────
     drawHarmonicLattice(now, w, h) {
         const cx = w / 2, cy = h / 2;
         const radius = Math.min(w, h) * 0.28;
@@ -394,26 +446,32 @@ class Renderer {
 
         this.ctx.save();
 
-        // 12 reference dots + labels
         for (let i = 0; i < 12; i++) {
             const angle = (i / 12) * Math.PI * 2 - Math.PI / 2;
             const x = cx + Math.cos(angle) * radius;
             const y = cy + Math.sin(angle) * radius;
-            this.ctx.fillStyle = "rgba(232, 212, 162, 0.12)";
+            const pc = fifthsOrder[i];
+            const isTonic = this.tonicPc !== null && pc === this.tonicPc;
+
+            this.ctx.fillStyle = isTonic
+                ? "rgba(201, 169, 97, 0.5)"
+                : "rgba(232, 212, 162, 0.12)";
             this.ctx.beginPath();
-            this.ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+            this.ctx.arc(x, y, isTonic ? 2.5 : 1.5, 0, Math.PI * 2);
             this.ctx.fill();
-            // Label
-            this.ctx.fillStyle = "rgba(232, 212, 162, 0.25)";
-            this.ctx.font = "italic 10px 'EB Garamond', serif";
+
+            this.ctx.fillStyle = isTonic
+                ? "rgba(201, 169, 97, 0.65)"
+                : "rgba(232, 212, 162, 0.28)";
+            this.ctx.font = isTonic ? "italic 500 11px 'EB Garamond', serif"
+                                    : "italic 10px 'EB Garamond', serif";
             this.ctx.textAlign = "center";
             this.ctx.textBaseline = "middle";
-            const lx = cx + Math.cos(angle) * (radius + 18);
-            const ly = cy + Math.sin(angle) * (radius + 18);
+            const lx = cx + Math.cos(angle) * (radius + 20);
+            const ly = cy + Math.sin(angle) * (radius + 20);
             this.ctx.fillText(pcLabels[i], lx, ly);
         }
 
-        // Active notes
         const activeNotes = this.notes.filter(n => now >= n.time && now <= n.time + n.duration);
         if (activeNotes.length === 0) { this.ctx.restore(); return; }
 
@@ -424,21 +482,19 @@ class Renderer {
             return {
                 x: cx + Math.cos(angle) * radius,
                 y: cy + Math.sin(angle) * radius,
-                n
+                n, pc
             };
         });
 
-        // Chord polygon — connect unique pitch classes
         const uniquePoints = [];
         const seen = new Set();
         points.forEach(p => {
-            const pc = ((p.n.midi % 12) + 12) % 12;
-            if (!seen.has(pc)) { seen.add(pc); uniquePoints.push(p); }
+            if (!seen.has(p.pc)) { seen.add(p.pc); uniquePoints.push(p); }
         });
 
         if (uniquePoints.length > 1) {
             this.ctx.strokeStyle = PALETTE.gold;
-            this.ctx.globalAlpha = 0.25;
+            this.ctx.globalAlpha = 0.28;
             this.ctx.lineWidth = 0.75;
             this.ctx.beginPath();
             uniquePoints.forEach((p, i) => {
@@ -448,7 +504,6 @@ class Renderer {
             this.ctx.stroke();
         }
 
-        // Active points
         points.forEach(p => {
             this.ctx.globalAlpha = 0.9;
             this.ctx.fillStyle = PALETTE.voices[p.n.track % PALETTE.voices.length];
@@ -460,10 +515,9 @@ class Renderer {
         this.ctx.restore();
     }
 
-    // ─── Helper: rounded rect ─────────────────────────────────────────────────
     roundRect(x, y, w, h, r) {
         const ctx = this.ctx;
-        r = Math.min(r, w / 2, h / 2);
+        r = Math.max(0, Math.min(r, w / 2, h / 2));
         ctx.beginPath();
         ctx.moveTo(x + r, y);
         ctx.lineTo(x + w - r, y);
@@ -478,7 +532,7 @@ class Renderer {
     }
 }
 
-// ═══ Application ═══════════════════════════════════════════════════════════════
+// ═══ App ═══════════════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
     const canvas = document.getElementById("visualizer");
     const ren = new Renderer(canvas);
@@ -494,17 +548,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     const titleEl = document.getElementById("work-title");
     const metaEl = document.getElementById("work-meta");
 
+    let currentTonicPc = null;
+    let hasPlayedOnce = false; // track whether silent intro was used
+
     ren.clear();
     window.addEventListener("resize", () => { if (!ren.isAnimating) ren.clear(); });
 
-    // ─── Load library ─────────────────────────────────────────────────────────
     try {
         await lib.load("./bach.zip");
         tSel.innerHTML = "";
-        const folders = Object.entries(lib.tree).sort(([a],[b]) => a.localeCompare(b));
-        folders.forEach(([f, files]) => {
-            const g = document.createElement("optgroup");
-            g.label = f;
+        Object.entries(lib.tree).sort(([a],[b]) => a.localeCompare(b)).forEach(([f, files]) => {
+            const g = document.createElement("optgroup"); g.label = f;
             files.sort().forEach(file => {
                 const o = document.createElement("option");
                 o.value = file;
@@ -515,21 +569,26 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
         tSel.disabled = false;
         playBtn.disabled = false;
-        updateTitle();
+        updateTitle(true);
     } catch (e) {
         console.error(e);
         titleEl.textContent = "Could not load library";
         titleEl.classList.remove("breathing", "loading");
     }
 
-    function updateTitle() {
-        const parsed = parseTitle(tSel.value || "");
-        titleEl.classList.remove("loading", "breathing");
-        titleEl.textContent = parsed.title;
-        metaEl.textContent = parsed.meta;
+    function updateTitle(immediate = false) {
+        const apply = () => {
+            const parsed = parseTitle(tSel.value || "");
+            titleEl.classList.remove("loading", "breathing");
+            titleEl.textContent = parsed.title;
+            metaEl.textContent = parsed.meta;
+            currentTonicPc = parsed.tonic;
+        };
+        if (immediate) return apply();
+        titleEl.style.opacity = '0';
+        setTimeout(() => { apply(); titleEl.style.opacity = ''; }, 280);
     }
 
-    // ─── View selector ────────────────────────────────────────────────────────
     vSel.onchange = (e) => {
         ren.view = e.target.value;
         if (!ren.isAnimating && ren.notes.length > 0) {
@@ -537,11 +596,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     };
 
-    // ─── Track selector ───────────────────────────────────────────────────────
     tSel.onchange = () => {
         engine.stop();
         ren.notes = []; ren.totalTime = 0;
         ren.isAnimating = false;
+        hasPlayedOnce = false;
         ren.clear();
         prog.style.width = "0%";
         seek.value = 0;
@@ -552,7 +611,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateTitle();
     };
 
-    // ─── Render loop ──────────────────────────────────────────────────────────
     let rafId = null;
     let isDragging = false;
     const stopLoop = () => { if (rafId) { cancelAnimationFrame(rafId); rafId = null; } };
@@ -560,20 +618,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         stopLoop();
         const loop = () => {
             if (!ren.isAnimating) { rafId = null; return; }
-            const t = Tone.Transport.seconds;
+            const t = Math.max(0, Tone.Transport.seconds);
             ren.draw(t);
             if (ren.totalTime > 0) {
-                const ratio = Math.min(t / ren.totalTime, 1);
+                const ratio = Math.min(Math.max(t, 0) / ren.totalTime, 1);
                 prog.style.width = (ratio * 100) + "%";
                 if (!isDragging) seek.value = ratio * 1000;
-                timeDisp.textContent = `${formatTime(t)} / ${formatTime(ren.totalTime)}`;
-                // Keep drawing during end fade-out (up to 3s past end)
-                if (t >= ren.totalTime + 3) {
+                timeDisp.textContent = `${formatTime(Math.max(0,t))} / ${formatTime(ren.totalTime)}`;
+                if (t >= ren.totalTime + 3.2) {
                     engine.stop();
                     ren.isAnimating = false;
+                    hasPlayedOnce = false;
                     playBtn.textContent = "Play";
                     seek.value = 0;
                     prog.style.width = "0%";
+                    timeDisp.textContent = `0:00 / ${formatTime(ren.totalTime)}`;
                     return;
                 }
             }
@@ -582,18 +641,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         rafId = requestAnimationFrame(loop);
     };
 
-    // ─── Play / Pause toggle ──────────────────────────────────────────────────
     const doPlay = async () => {
         try {
             if (ren.notes.length === 0) {
                 const buf = lib.works.get(tSel.value);
                 if (!buf) return;
                 const duration = engine.loadTrack(buf);
-                ren.setup(engine.notes, duration, engine.tempo);
+                ren.setup(engine.notes, duration, engine.tempo, currentTonicPc);
             }
             await Tone.loaded();
-            ren.startTime = engine.pauseOffset;
-            await engine.play();
+            const useIntro = !hasPlayedOnce && engine.pauseOffset === 0;
+            ren.startTime = engine.pauseOffset - (useIntro ? SILENT_INTRO : 0);
+            await engine.play(engine.pauseOffset, useIntro);
+            hasPlayedOnce = true;
             ren.isAnimating = true;
             startLoop();
             playBtn.textContent = "Pause";
@@ -606,11 +666,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         stopLoop();
         playBtn.textContent = "Resume";
     };
-    playBtn.onclick = () => {
-        if (engine.isPlaying) doPause(); else doPlay();
-    };
+    playBtn.onclick = () => { if (engine.isPlaying) doPause(); else doPlay(); };
 
-    // ─── Scrubber ─────────────────────────────────────────────────────────────
     let wasPlayingBeforeDrag = false;
     seek.addEventListener("pointerdown", () => {
         if (ren.totalTime <= 0) return;
@@ -626,7 +683,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     seek.addEventListener("input", (e) => {
         if (ren.totalTime <= 0) return;
         const t = (e.target.value / 1000) * ren.totalTime;
-        ren.startTime = t; // reset fade baseline
+        ren.startTime = t;
+        ren.smoothNow = t;
         ren.draw(t);
         prog.style.width = (e.target.value / 10) + "%";
         timeDisp.textContent = `${formatTime(t)} / ${formatTime(ren.totalTime)}`;
@@ -639,7 +697,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         engine.pauseOffset = newTime;
         if (wasPlayingBeforeDrag) {
             ren.startTime = newTime;
-            await engine.play(newTime);
+            ren.smoothNow = newTime;
+            await engine.play(newTime, false);
             ren.isAnimating = true;
             startLoop();
         } else {
@@ -647,7 +706,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    // ─── Keyboard ─────────────────────────────────────────────────────────────
+    // Hover on canvas: highlight voice
+    canvas.addEventListener("mousemove", (e) => {
+        if (ren.view === "harmonic-lattice") { ren.hoveredVoice = null; return; }
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const now = Math.max(0, Tone.Transport.seconds);
+        const note = ren.noteAt(mx, my, now, canvas.clientWidth, canvas.clientHeight);
+        ren.hoveredVoice = note ? note.track : null;
+        if (!ren.isAnimating) ren.draw(engine.pauseOffset || 0);
+    });
+    canvas.addEventListener("mouseleave", () => {
+        ren.hoveredVoice = null;
+        if (!ren.isAnimating) ren.draw(engine.pauseOffset || 0);
+    });
+
     document.addEventListener("keydown", (e) => {
         if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
         if (e.code === "Space") {
@@ -657,17 +731,19 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (ren.totalTime <= 0) return;
             e.preventDefault();
             const delta = e.code === "ArrowLeft" ? -5 : 5;
-            const newT = Math.max(0, Math.min(ren.totalTime, Tone.Transport.seconds + delta));
+            const current = Math.max(0, Tone.Transport.seconds);
+            const newT = Math.max(0, Math.min(ren.totalTime, current + delta));
             engine.pauseOffset = newT;
             ren.startTime = newT;
-            if (engine.isPlaying) engine.play(newT);
+            ren.smoothNow = newT;
+            if (engine.isPlaying) engine.play(newT, false);
             else ren.draw(newT);
             const ratio = newT / ren.totalTime;
             seek.value = ratio * 1000;
             prog.style.width = (ratio * 100) + "%";
+            timeDisp.textContent = `${formatTime(newT)} / ${formatTime(ren.totalTime)}`;
         }
     });
 
-    // ─── Initial state: draw empty canvas ─────────────────────────────────────
     ren.clear();
 });
