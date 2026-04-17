@@ -502,15 +502,85 @@ class Renderer {
         });
     }
 
+    // ═══ Chord detection ══════════════════════════════════════════════════════════
+    // Returns { name, root, quality } or null if inconclusive.
+    detectChord(activeNotes) {
+        if (activeNotes.length < 2) return null;
+        // Get unique pitch classes
+        const pcSet = new Set();
+        activeNotes.forEach(n => pcSet.add(((n.midi % 12) + 12) % 12));
+        const pcs = Array.from(pcSet).sort((a, b) => a - b);
+        if (pcs.length < 2) return null;
+        // Find lowest-sounding note (bass) as primary root candidate
+        const bassNote = activeNotes.reduce((lo, n) => n.midi < lo.midi ? n : lo);
+        const bassPc = ((bassNote.midi % 12) + 12) % 12;
+        // Chord templates (intervals from root)
+        const templates = [
+            { name: "",      intervals: [0, 4, 7],       priority: 10 }, // major
+            { name: "m",     intervals: [0, 3, 7],       priority: 10 }, // minor
+            { name: "°",     intervals: [0, 3, 6],       priority: 8  }, // diminished
+            { name: "⁺",     intervals: [0, 4, 8],       priority: 6  }, // augmented
+            { name: "⁷",     intervals: [0, 4, 7, 10],   priority: 9  }, // dom 7
+            { name: "maj⁷",  intervals: [0, 4, 7, 11],   priority: 9  }, // maj 7
+            { name: "m⁷",    intervals: [0, 3, 7, 10],   priority: 9  }, // min 7
+            { name: "ø",     intervals: [0, 3, 6, 10],   priority: 8  }, // half-dim
+            { name: "°⁷",    intervals: [0, 3, 6, 9],    priority: 7  }, // dim 7
+            { name: "sus⁴",  intervals: [0, 5, 7],       priority: 5  }, // sus4
+            { name: "sus²",  intervals: [0, 2, 7],       priority: 5  }, // sus2
+        ];
+        const noteNames = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+        // Try each PC as potential root, score each template
+        let best = null;
+        for (const rootPc of pcs) {
+            for (const tmpl of templates) {
+                const expected = tmpl.intervals.map(iv => (rootPc + iv) % 12);
+                // How many template tones are present?
+                const matched = expected.filter(pc => pcSet.has(pc)).length;
+                // How many extra tones are NOT in template?
+                const extras = pcs.filter(pc => !expected.includes(pc)).length;
+                // Coverage: matched / template size
+                const coverage = matched / expected.length;
+                // Must match all template tones
+                if (matched < expected.length) continue;
+                // Allow at most 1 extra (could be tension/passing tone)
+                if (extras > 1) continue;
+                // Score: prioritize coverage, penalize extras, bonus if root is bass
+                let score = tmpl.priority * coverage * 10;
+                score -= extras * 2;
+                if (rootPc === bassPc) score += 5;
+                if (!best || score > best.score) {
+                    best = {
+                        name: noteNames[rootPc] + tmpl.name,
+                        root: rootPc,
+                        quality: tmpl.name,
+                        score
+                    };
+                }
+            }
+        }
+        // Fallback: just an interval (two notes)
+        if (!best && pcs.length === 2) {
+            const interval = ((pcs[1] - pcs[0]) + 12) % 12;
+            const intervalNames = {
+                1: "m2", 2: "M2", 3: "m3", 4: "M3", 5: "P4",
+                6: "TT", 7: "P5", 8: "m6", 9: "M6", 10: "m7", 11: "M7"
+            };
+            const iv = intervalNames[interval] || null;
+            if (iv) {
+                return { name: noteNames[pcs[0]] + "–" + noteNames[pcs[1]], interval: iv };
+            }
+        }
+        return best;
+    }
+
     drawVoiceConstellation(now, w, h) {
         const mobile = isMobile();
-        const top = mobile ? 40 : 60;
+        const top = mobile ? 60 : 90;           // more room on top for chord label
         const bottom = mobile ? 40 : 60;
         const height = Math.max(10, h - top - bottom);
         const centerX = w / 2;
         const baseAlpha = this.ctx.globalAlpha;
         const palette = getPalette();
-
         // Octave reference lines
         this.ctx.save();
         this.ctx.font = `italic ${mobile ? 9 : 10}px 'EB Garamond', serif`;
@@ -530,14 +600,64 @@ class Renderer {
             this.ctx.fillText(`C${octave}`, w * 0.12, y);
         }
         this.ctx.restore();
-
         const activeNotes = this.notes.filter(n =>
             now >= n.time && now <= n.time + n.duration
         );
+        // ─── Chord detection with smoothing ───────────────────────────────────
+        const detected = this.detectChord(activeNotes);
+        if (detected) {
+            this._lastChord = detected;
+            this._lastChordTime = now;
+        }
+        // Keep showing last chord for 0.4s after it disappears (stability)
+        const chord = (now - (this._lastChordTime || 0) < 0.4) ? this._lastChord : null;
+        // ─── Draw chord label ─────────────────────────────────────────────────
+        if (chord && chord.name) {
+            this.ctx.save();
+            this.ctx.globalAlpha = baseAlpha * 0.85;
+            this.ctx.fillStyle = palette.ink;
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "middle";
+            // Main chord name
+            this.ctx.font = `italic 500 ${mobile ? 28 : 38}px 'EB Garamond', serif`;
+            this.ctx.fillText(chord.name, centerX, mobile ? 28 : 42);
+            // Subtle descriptor below
+            if (chord.interval) {
+                this.ctx.globalAlpha = baseAlpha * 0.35;
+                this.ctx.font = `italic ${mobile ? 9 : 10}px 'EB Garamond', serif`;
+                this.ctx.fillStyle = palette.gold;
+                // Add letter-spacing via manual rendering
+                const label = chord.interval + "  ·  interval";
+                this.ctx.fillText(label.toUpperCase(), centerX, mobile ? 48 : 68);
+            } else if (chord.quality !== undefined) {
+                this.ctx.globalAlpha = baseAlpha * 0.35;
+                this.ctx.font = `italic ${mobile ? 9 : 10}px 'EB Garamond', serif`;
+                this.ctx.fillStyle = palette.gold;
+                const qualityMap = {
+                    "":      "major",
+                    "m":     "minor",
+                    "°":     "diminished",
+                    "⁺":     "augmented",
+                    "⁷":     "dominant 7th",
+                    "maj⁷":  "major 7th",
+                    "m⁷":    "minor 7th",
+                    "ø":     "half-diminished",
+                    "°⁷":    "diminished 7th",
+                    "sus⁴":  "suspended 4th",
+                    "sus²":  "suspended 2nd",
+                };
+                const label = qualityMap[chord.quality] || "";
+                if (label) {
+                    // Spaced uppercase
+                    const spaced = label.toUpperCase().split('').join(' ');
+                    this.ctx.fillText(spaced, centerX, mobile ? 48 : 68);
+                }
+            }
+            this.ctx.restore();
+        }
         if (activeNotes.length === 0) return;
-
+        // Sort by track for stable layout
         activeNotes.sort((a, b) => a.track - b.track || a.midi - b.midi);
-
         const spread = Math.min(w * 0.5, 400);
         const points = activeNotes.map((n, i) => {
             const ratio = activeNotes.length === 1 ? 0.5 : i / (activeNotes.length - 1);
@@ -545,8 +665,7 @@ class Renderer {
             const y = this.midiToY(n.midi, top, height);
             return { x, y, n };
         });
-
-        // Chord line
+        // Chord connecting line
         if (points.length > 1) {
             this.ctx.save();
             this.ctx.strokeStyle = palette.gold;
@@ -560,10 +679,11 @@ class Renderer {
             this.ctx.stroke();
             this.ctx.restore();
         }
-
-        // Points with glow
+        // Points with glow + note name label
+        const noteNames = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
         points.forEach(p => {
             const color = palette.voices[p.n.track % palette.voices.length];
+            // Outer glow
             this.ctx.save();
             const gradient = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 22);
             gradient.addColorStop(0, color);
@@ -574,13 +694,24 @@ class Renderer {
             this.ctx.arc(p.x, p.y, 22, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.restore();
-
+            // Core dot
             this.ctx.save();
             this.ctx.globalAlpha = baseAlpha;
             this.ctx.fillStyle = color;
             this.ctx.beginPath();
             this.ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
             this.ctx.fill();
+            this.ctx.restore();
+            // Note name next to point (small, italic)
+            this.ctx.save();
+            this.ctx.globalAlpha = baseAlpha * 0.5;
+            this.ctx.fillStyle = palette.ink;
+            this.ctx.font = `italic ${mobile ? 10 : 11}px 'EB Garamond', serif`;
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "top";
+            const pc = ((p.n.midi % 12) + 12) % 12;
+            const octave = Math.floor(p.n.midi / 12) - 1;
+            this.ctx.fillText(`${noteNames[pc]}${octave}`, p.x, p.y + 10);
             this.ctx.restore();
         });
     }
