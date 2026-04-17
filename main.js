@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach Visualisation · Master Edition (V.Final - The "Stuck" Fix)
+// Bach Visualisation · Master Edition (V.Final - Core Sync Fix)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class BachLibrary {
@@ -18,6 +18,7 @@ class BachLibrary {
         });
         await Promise.all(ps);
     }
+    getWork(path) { return this.works.get(path); }
 }
 
 class AudioEngine {
@@ -39,7 +40,7 @@ class AudioEngine {
             });
         });
         this.notes = notes;
-        return { notes, duration };
+        return duration;
     }
     async play(start = this.pauseOffset) {
         if (Tone.context.state !== 'running') await Tone.start();
@@ -62,9 +63,9 @@ class CanvasRenderer {
         this.palettes = [ ["#D4AF37", "#8C92AC", "#C0C0C0", "#A9A9A9", "#E5E4E2"], ["#E27D60", "#85DCBA", "#E8A87C", "#C38D9E", "#41B3A3"], ["#FFFFFF", "#CCCCCC", "#999999", "#666666", "#333333"] ];
         this.currentPalette = 0; this.view = "architectural";
     }
-    hardReset() {
+    reset() {
         this.isAnimating = false; this.notes = []; this.totalTime = 0;
-        const ctx = this.ctx; ctx.fillStyle = "#07080A"; ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.fillStyle = "#07080A"; this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
     }
     resize() {
         const dpr = window.devicePixelRatio || 1;
@@ -73,10 +74,9 @@ class CanvasRenderer {
     }
     draw(now) {
         this.resize(); const ctx = this.ctx; const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-        const l = { w, h, top: 40, uh: h - 88, span: this.maxMidi - this.minMidi || 1 };
+        const l = { w, h, top: 40, uh: h - 88, span: (this.maxMidi - this.minMidi) || 1 };
         const px = w < 768 ? 60 : 180;
         ctx.fillStyle = "#07080A"; ctx.fillRect(0,0,w,h);
-        
         const visible = this.notes.filter(n => (n.time + n.duration) > (now - 2) && n.time < (now + w/180));
         visible.forEach(n => {
             const x = px + (n.time - now) * 180, y = l.top + (1 - (n.midi - this.minMidi) / l.span) * l.uh;
@@ -85,7 +85,7 @@ class CanvasRenderer {
             ctx.fillStyle = this.palettes[this.currentPalette][n.track % 5];
             if (this.view === "architectural") ctx.fillRect(x, y - 6, n.duration * 180, 12);
             else if (this.view === "melodic-contour") { ctx.beginPath(); ctx.arc(x, y, active ? 5 : 3, 0, Math.PI*2); ctx.fill(); }
-            else if (active) { ctx.beginPath(); ctx.arc(px, y, 10, 0, Math.PI*2); ctx.fill(); }
+            else if (active) { ctx.beginPath(); ctx.arc(px, y, 12, 0, Math.PI*2); ctx.fill(); }
         });
         ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.beginPath(); ctx.moveTo(px, l.top); ctx.lineTo(px, h - 48); ctx.stroke();
     }
@@ -99,7 +99,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const seek = document.getElementById("seek-slider"), prog = document.getElementById("progress-fill");
     const library = new BachLibrary();
 
-    // Palette Builder
     const pContainer = document.getElementById("palette-picker-container");
     renderer.palettes.forEach((p, i) => {
         const d = document.createElement("div"); d.className = "palette-btn";
@@ -119,34 +118,34 @@ document.addEventListener("DOMContentLoaded", async () => {
             tSel.appendChild(g);
         }
         tSel.disabled = false; playBtn.disabled = false;
-    } catch(e) { console.error("Library Fail", e); }
+        renderer.drawPlaceholder("Ready");
+    } catch(e) { console.error(e); }
 
-    // THE FIX: Hard reset on change
-    tSel.addEventListener("change", () => {
-        console.log("Track Reset:", tSel.value);
-        audio.stop(); renderer.hardReset();
-        playBtn.disabled = false; pauseBtn.disabled = true; stopBtn.disabled = true;
+    // שינוי בחירה מאפס את המוכנות לנגינה
+    tSel.onchange = () => {
+        audio.stop(); renderer.reset();
+        playBtn.disabled = false; pauseBtn.disabled = true;
         seek.value = 0; prog.style.width = "0%";
-    });
+    };
 
     playBtn.onclick = async () => {
+        // טעינה רק אם אין תווים בזיכרון (כלומר אחרי החלפת שיר או סטופ)
         if (renderer.notes.length === 0) {
-            const { notes, duration } = await audio.loadMidi(library.getWork(tSel.value));
-            renderer.notes = notes; renderer.totalTime = duration;
-            let min = 127, max = 0; notes.forEach(n => { min = Math.min(min, n.midi); max = Math.max(max, n.midi); });
+            const duration = await audio.loadMidi(library.getWork(tSel.value));
+            renderer.notes = audio.notes; renderer.totalTime = duration;
+            let min = 127, max = 0; renderer.notes.forEach(n => { min = Math.min(min, n.midi); max = Math.max(max, n.midi); });
             renderer.minMidi = min - 4; renderer.maxMidi = max + 4;
         }
-        await audio.play(); renderer.start(() => audio.getCurrentTime());
+        await audio.play(); renderer.start(() => audio.isPlaying ? Tone.Transport.seconds : audio.pauseOffset);
         playBtn.disabled = true; pauseBtn.disabled = false; stopBtn.disabled = false; seek.disabled = false;
     };
 
     pauseBtn.onclick = () => { audio.pause(); renderer.isAnimating = false; playBtn.disabled = false; pauseBtn.disabled = true; };
-    stopBtn.onclick = () => { audio.stop(); renderer.hardReset(); prog.style.width = "0%"; playBtn.disabled = false; pauseBtn.disabled = true; };
-    audio.getCurrentTime = () => audio.isPlaying ? Tone.Transport.seconds : audio.pauseOffset;
-    renderer.onProgress = (p) => { if(!isDragging) { prog.style.width = (p*100)+"%"; seek.value = p*1000; } };
+    stopBtn.onclick = () => { audio.stop(); renderer.reset(); prog.style.width = "0%"; playBtn.disabled = false; pauseBtn.disabled = true; };
     
+    renderer.onProgress = (p) => { if(!isDragging) { prog.style.width = (p*100)+"%"; seek.value = p*1000; } };
     let isDragging = false;
     seek.onpointerdown = () => { isDragging = true; renderer.isAnimating = false; };
     seek.oninput = (e) => { const t = (e.target.value/1000)*renderer.totalTime; renderer.draw(t); prog.style.width = (e.target.value/10)+"%"; };
-    seek.onpointerup = async (e) => { isDragging = false; audio.pauseOffset = (e.target.value/1000)*renderer.totalTime; await audio.play(); renderer.start(() => audio.getCurrentTime()); };
+    seek.onpointerup = async (e) => { isDragging = false; audio.pauseOffset = (e.target.value/1000)*renderer.totalTime; await audio.play(); renderer.start(() => audio.isPlaying ? Tone.Transport.seconds : audio.pauseOffset); };
 });
