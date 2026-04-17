@@ -2,63 +2,239 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Bach · Music Visualization</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bach</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
     <style>
-        :root { --bg: #07080A; --panel: #0F1115; --gold: #D4A843; --dim: rgba(255, 255, 255, 0.4); }
-        body { margin: 0; padding: 0; background: var(--bg); color: white; font-family: 'EB Garamond', serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; touch-action: none; }
-        #toolbar { background: var(--panel); border-bottom: 1px solid rgba(255, 255, 255, 0.05); z-index: 100; display: flex; flex-direction: column; }
-        #controls { padding: 12px 24px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-        .input-group { display: flex; align-items: center; gap: 10px; }
-        label { font-size: 10px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; }
-        select, button { font-family: 'EB Garamond', serif; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; padding: 8px 16px; background: transparent; color: white; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; cursor: pointer; transition: all 0.2s ease; outline: none; }
-        select { appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23D4A843%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right 10px center; background-size: 8px auto; }
-        button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); background: rgba(212, 168, 67, 0.05); }
-        button:disabled { opacity: 0.2; cursor: not-allowed; }
-        #palette-picker-container { display: flex; gap: 6px; align-items: center; }
-        .palette-btn { display: flex; height: 20px; width: 60px; border-radius: 3px; overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
-        .palette-btn.active { border-color: white; transform: scale(1.1); }
-        .palette-color-strip { flex: 1; height: 100%; }
-        .brand { margin-left: auto; font-style: italic; font-size: 13px; color: var(--gold); opacity: 0.6; }
-        #scrubber-container { width: 100%; height: 5px; background: rgba(255, 255, 255, 0.05); position: relative; }
-        #progress-fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--gold); width: 0%; pointer-events: none; }
-        #seek-slider { -webkit-appearance: none; width: 100%; height: 100%; background: transparent; outline: none; margin: 0; position: absolute; top: 0; cursor: pointer; }
-        #seek-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
+        :root {
+            --bg: #0A0908;
+            --bg-warm: #0F0D0A;
+            --ink: #E8D4A2;
+            --ink-dim: rgba(232, 212, 162, 0.4);
+            --ink-faint: rgba(232, 212, 162, 0.15);
+            --gold: #C9A961;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: 'EB Garamond', serif;
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        body {
+            display: flex; flex-direction: column;
+            background: radial-gradient(ellipse at center, var(--bg-warm) 0%, var(--bg) 70%);
+        }
+
+        /* ═══ Header ═══ */
+        header {
+            padding: 32px 48px 20px;
+            display: flex; align-items: baseline; gap: 24px;
+            flex-shrink: 0;
+        }
+        #work-title {
+            font-size: 28px;
+            font-style: italic;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+            opacity: 0.85;
+            transition: opacity 0.6s ease;
+            min-height: 36px;
+            flex: 1;
+        }
+        #work-title.loading { opacity: 0.3; }
+        #work-meta {
+            font-size: 10px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--ink-dim);
+            font-style: normal;
+        }
+
+        /* ═══ Canvas ═══ */
+        #visualizer {
+            flex: 1;
+            width: 100%;
+            display: block;
+            cursor: default;
+        }
+
+        /* ═══ Controls ═══ */
+        #controls {
+            padding: 18px 48px 14px;
+            display: flex; align-items: center; gap: 28px;
+            flex-shrink: 0;
+        }
+        .ctrl-label {
+            font-size: 9px;
+            letter-spacing: 2.5px;
+            text-transform: uppercase;
+            color: var(--ink-dim);
+            margin-right: 8px;
+        }
+        select {
+            font-family: 'EB Garamond', serif;
+            font-size: 14px;
+            font-style: italic;
+            color: var(--ink);
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid var(--ink-faint);
+            padding: 4px 24px 4px 2px;
+            appearance: none;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.3s ease;
+            background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23C9A961%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+            background-repeat: no-repeat;
+            background-position: right 2px center;
+            background-size: 7px;
+            min-width: 160px;
+            max-width: 280px;
+        }
+        select:hover:not(:disabled) { border-bottom-color: var(--gold); }
+        select:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        #play-toggle {
+            font-family: 'EB Garamond', serif;
+            font-size: 13px;
+            font-style: italic;
+            letter-spacing: 0.5px;
+            color: var(--ink);
+            background: transparent;
+            border: 1px solid var(--ink-faint);
+            border-radius: 100px;
+            padding: 8px 22px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s ease;
+            min-width: 110px;
+        }
+        #play-toggle:hover:not(:disabled) {
+            border-color: var(--gold);
+            color: var(--gold);
+        }
+        #play-toggle:disabled { opacity: 0.25; cursor: not-allowed; }
+
+        /* ═══ Scrubber ═══ */
+        #scrubber {
+            position: relative;
+            flex: 1;
+            height: 24px;
+            display: flex; align-items: center;
+            cursor: pointer;
+        }
+        #scrubber-track {
+            width: 100%;
+            height: 1px;
+            background: var(--ink-faint);
+        }
+        #scrubber-progress {
+            position: absolute;
+            left: 0; top: 50%;
+            transform: translateY(-50%);
+            height: 1px;
+            background: var(--gold);
+            width: 0%;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        #seek-slider {
+            -webkit-appearance: none;
+            position: absolute;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background: transparent;
+            outline: none; margin: 0;
+            cursor: pointer;
+        }
+        #seek-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--gold);
+            opacity: 0.7;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        #seek-slider:hover::-webkit-slider-thumb { opacity: 1; transform: scale(1.3); }
+        #seek-slider:disabled::-webkit-slider-thumb { display: none; }
+        #time-display {
+            font-size: 11px;
+            font-style: italic;
+            color: var(--ink-dim);
+            letter-spacing: 1px;
+            font-variant-numeric: tabular-nums;
+            min-width: 90px;
+            text-align: right;
+        }
+
+        /* ═══ Footer ═══ */
+        footer {
+            padding: 6px 48px 14px;
+            font-size: 9px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+            text-align: right;
+            font-style: italic;
+            flex-shrink: 0;
+        }
+
+        /* ═══ Loading ═══ */
+        @keyframes breathe {
+            0%, 100% { opacity: 0.25; }
+            50% { opacity: 0.6; }
+        }
+        .breathing { animation: breathe 2.4s ease-in-out infinite; }
+
+        /* ═══ Mobile ═══ */
+        @media (max-width: 768px) {
+            header { padding: 20px 20px 12px; flex-direction: column; gap: 6px; align-items: flex-start; }
+            #work-title { font-size: 20px; }
+            #controls { padding: 14px 20px 10px; flex-wrap: wrap; gap: 14px; }
+            footer { padding: 6px 20px 10px; }
+            select { min-width: 120px; font-size: 13px; }
+        }
     </style>
 </head>
 <body>
-    <div id="toolbar">
-        <div id="controls">
-            <div class="input-group">
-                <label>Perspective</label>
-                <select id="view-selector">
-                    <option value="architectural" selected>Architectural</option>
-                    <option value="melodic-contour">Melodic Contour</option>
-                    <option value="harmonic-lattice">Harmonic Lattice</option>
-                </select>
-            </div>
-            <div class="input-group">
-                <label>Work</label>
-                <select id="track-selector" disabled><option>Loading Library...</option></select>
-            </div>
-            <div class="button-group">
-                <button id="btn-play" disabled>Play</button>
-                <button id="btn-pause" disabled>Pause</button>
-                <button id="btn-stop" disabled>Stop</button>
-            </div>
-            <div id="palette-picker-container"></div>
-            <div class="brand">Bach · Music Visualization</div>
-        </div>
-        <div id="scrubber-container">
-            <div id="progress-fill"></div>
+    <header>
+        <div id="work-title" class="loading breathing">Preparing the score</div>
+        <div id="work-meta"></div>
+    </header>
+
+    <canvas id="visualizer"></canvas>
+
+    <div id="controls">
+        <span class="ctrl-label">Work</span>
+        <select id="track-selector" disabled><option>—</option></select>
+
+        <span class="ctrl-label">View</span>
+        <select id="view-selector">
+            <option value="architectural" selected>Architectural</option>
+            <option value="melodic-contour">Melodic Contour</option>
+            <option value="harmonic-lattice">Harmonic Lattice</option>
+        </select>
+
+        <button id="play-toggle" disabled>Play</button>
+
+        <div id="scrubber">
+            <div id="scrubber-track"></div>
+            <div id="scrubber-progress"></div>
             <input type="range" id="seek-slider" min="0" max="1000" value="0" disabled>
         </div>
+
+        <div id="time-display">0:00 / 0:00</div>
     </div>
-    <canvas id="visualizer"></canvas>
-    <script type="module" src="./main.js"></script>
+
+    <footer>Johann Sebastian Bach · 1685–1750</footer>
+
+    <script src="./main.js"></script>
 </body>
 </html>
