@@ -16,20 +16,16 @@
             --bg-color: #07080A;
             --panel-color: #0F1115;
             --accent-gold: #D4A843;
-            --alert-red: #E07B54;
             --text-dim: rgba(255, 255, 255, 0.4);
         }
 
         body {
-            margin: 0;
-            padding: 0;
+            margin: 0; padding: 0;
             background-color: var(--bg-color);
             color: white;
             font-family: 'EB Garamond', serif;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
+            display: flex; flex-direction: column;
+            height: 100vh; overflow: hidden;
             touch-action: none;
         }
 
@@ -37,90 +33,46 @@
             background: var(--panel-color);
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             z-index: 100;
-            display: flex;
-            flex-direction: column;
+            display: flex; flex-direction: column;
         }
 
         #controls {
             padding: 12px 24px;
-            display: flex;
-            gap: 24px;
-            align-items: center;
-            flex-wrap: wrap;
+            display: flex; gap: 24px; align-items: center; flex-wrap: wrap;
         }
 
-        .input-group {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
+        .input-group { display: flex; align-items: center; gap: 12px; }
 
         label {
-            font-size: 11px;
-            color: var(--text-dim);
-            letter-spacing: 2px;
-            text-transform: uppercase;
+            font-size: 11px; color: var(--text-dim);
+            letter-spacing: 2px; text-transform: uppercase;
         }
 
         select, button {
             font-family: 'EB Garamond', serif;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            padding: 8px 18px;
-            background: transparent;
-            color: white;
+            font-size: 13px; text-transform: uppercase;
+            letter-spacing: 1.5px; padding: 8px 18px;
+            background: transparent; color: white;
             border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            outline: none;
+            border-radius: 4px; cursor: pointer;
+            transition: all 0.3s ease; outline: none;
         }
         
         select {
-            appearance: none;
-            padding-right: 36px;
+            appearance: none; padding-right: 36px;
             background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23D4A843%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-            background-repeat: no-repeat;
-            background-position: right 14px top 50%;
-            background-size: 10px auto;
-            max-width: 320px;
+            background-repeat: no-repeat; background-position: right 14px top 50%;
+            background-size: 10px auto; max-width: 320px;
         }
 
         button:hover:not(:disabled), select:hover:not(:disabled) {
-            border-color: var(--accent-gold);
-            color: var(--accent-gold);
+            border-color: var(--accent-gold); color: var(--accent-gold);
             background-color: rgba(212, 168, 67, 0.04);
         }
 
-        button:disabled, select:disabled {
-            opacity: 0.2;
-            cursor: not-allowed;
-        }
-
-        #palette-picker-container {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-left: 12px;
-        }
-
-        .palette-btn {
-            display: flex;
-            height: 24px;
-            width: 80px;
-            border-radius: 4px;
-            overflow: hidden;
-            cursor: pointer;
-            border: 1px solid rgba(255,255,255,0.15);
-            transition: all 0.2s ease;
-        }
-
-        .palette-btn.active {
-            border-color: white;
-            transform: scale(1.05);
-        }
-
+        #palette-picker-container { display: flex; gap: 8px; align-items: center; margin-left: 12px; }
+        .palette-btn { display: flex; height: 24px; width: 60px; border-radius: 4px; overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.15); }
+        .palette-btn.active { border-color: white; transform: scale(1.1); }
         .palette-color-strip { flex: 1; height: 100%; }
 
         .brand { margin-left: auto; font-style: italic; font-size: 14px; color: var(--accent-gold); opacity: 0.7; }
@@ -133,10 +85,10 @@
         @media (max-width: 768px) {
             #controls { padding: 12px; gap: 12px; }
             .input-group { width: 48%; flex-direction: column; align-items: flex-start; }
-            .button-group { display: flex; width: 100%; gap: 8px; }
+            .button-group { display: flex; width: 100%; gap: 8px; margin-top: 8px; }
             button { flex: 1; padding: 12px 4px; }
             .brand { display: none; }
-            #palette-picker-container { width: 100%; justify-content: center; }
+            #palette-picker-container { width: 100%; justify-content: center; margin-top: 12px; }
         }
     </style>
 </head>
@@ -145,7 +97,7 @@
     <div id="toolbar">
         <div id="controls">
             <div class="input-group">
-                <label for="view-selector">Perspective</label>
+                <label>Perspective</label>
                 <select id="view-selector">
                     <option value="architectural" selected>Architectural</option>
                     <option value="melodic-contour">Melodic Contour</option>
@@ -154,9 +106,9 @@
             </div>
 
             <div class="input-group">
-                <label for="track-selector">Work</label>
+                <label>Work</label>
                 <select id="track-selector" disabled>
-                    <option value="">Loading Library...</option>
+                    <option value="">Loading...</option>
                 </select>
             </div>
             
@@ -167,8 +119,7 @@
             </div>
 
             <div id="palette-picker-container"></div>
-
-            <div class="brand">J.S. Bach · Counterpoint Engine</div>
+            <div class="brand">J.S. Bach · Master Edition</div>
         </div>
         
         <div id="scrubber-container">
