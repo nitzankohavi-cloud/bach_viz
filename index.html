@@ -22,8 +22,7 @@
         body {
             margin: 0; padding: 0;
             background-color: var(--bg-color);
-            color: white;
-            font-family: 'EB Garamond', serif;
+            color: white; font-family: 'EB Garamond', serif;
             display: flex; flex-direction: column;
             height: 100vh; overflow: hidden;
             touch-action: none;
@@ -32,63 +31,62 @@
         #toolbar {
             background: var(--panel-color);
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            z-index: 100;
-            display: flex; flex-direction: column;
+            z-index: 100; display: flex; flex-direction: column;
         }
 
         #controls {
             padding: 12px 24px;
-            display: flex; gap: 24px; align-items: center; flex-wrap: wrap;
+            display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
         }
 
-        .input-group { display: flex; align-items: center; gap: 12px; }
+        .input-group { display: flex; align-items: center; gap: 10px; }
 
         label {
-            font-size: 11px; color: var(--text-dim);
+            font-size: 10px; color: var(--text-dim);
             letter-spacing: 2px; text-transform: uppercase;
         }
 
         select, button {
             font-family: 'EB Garamond', serif;
             font-size: 13px; text-transform: uppercase;
-            letter-spacing: 1.5px; padding: 8px 18px;
+            letter-spacing: 1px; padding: 8px 16px;
             background: transparent; color: white;
             border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 4px; cursor: pointer;
-            transition: all 0.3s ease; outline: none;
+            transition: all 0.2s ease; outline: none;
         }
         
         select {
-            appearance: none; padding-right: 36px;
+            appearance: none; padding-right: 30px;
             background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23D4A843%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-            background-repeat: no-repeat; background-position: right 14px top 50%;
-            background-size: 10px auto; max-width: 320px;
+            background-repeat: no-repeat; background-position: right 10px center;
+            background-size: 8px auto; max-width: 250px;
         }
 
         button:hover:not(:disabled), select:hover:not(:disabled) {
             border-color: var(--accent-gold); color: var(--accent-gold);
-            background-color: rgba(212, 168, 67, 0.04);
+            background-color: rgba(212, 168, 67, 0.05);
         }
 
-        #palette-picker-container { display: flex; gap: 8px; align-items: center; margin-left: 12px; }
-        .palette-btn { display: flex; height: 24px; width: 60px; border-radius: 4px; overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.15); }
-        .palette-btn.active { border-color: white; transform: scale(1.1); }
+        #palette-picker-container { display: flex; gap: 6px; align-items: center; }
+        .palette-btn { display: flex; height: 20px; width: 50px; border-radius: 3px; overflow: hidden; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); }
+        .palette-btn.active { border-color: white; transform: scale(1.1); box-shadow: 0 0 10px rgba(255,255,255,0.1); }
         .palette-color-strip { flex: 1; height: 100%; }
 
-        .brand { margin-left: auto; font-style: italic; font-size: 14px; color: var(--accent-gold); opacity: 0.7; }
+        .brand { margin-left: auto; font-style: italic; font-size: 13px; color: var(--accent-gold); opacity: 0.6; }
 
-        #scrubber-container { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.05); position: relative; }
+        #scrubber-container { width: 100%; height: 5px; background: rgba(255, 255, 255, 0.05); position: relative; }
         #progress-fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--accent-gold); width: 0%; pointer-events: none; }
         #seek-slider { -webkit-appearance: none; width: 100%; height: 100%; background: transparent; outline: none; margin: 0; position: absolute; top: 0; cursor: pointer; }
         #seek-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent-gold); }
 
         @media (max-width: 768px) {
-            #controls { padding: 12px; gap: 12px; }
+            #controls { padding: 10px; gap: 10px; }
             .input-group { width: 48%; flex-direction: column; align-items: flex-start; }
-            .button-group { display: flex; width: 100%; gap: 8px; margin-top: 8px; }
-            button { flex: 1; padding: 12px 4px; }
+            .button-group { display: flex; width: 100%; gap: 5px; }
+            button { flex: 1; padding: 10px 2px; font-size: 11px; }
             .brand { display: none; }
-            #palette-picker-container { width: 100%; justify-content: center; margin-top: 12px; }
+            #palette-picker-container { width: 100%; justify-content: center; }
         }
     </style>
 </head>
@@ -108,7 +106,7 @@
             <div class="input-group">
                 <label>Work</label>
                 <select id="track-selector" disabled>
-                    <option value="">Loading...</option>
+                    <option value="">Loading Library...</option>
                 </select>
             </div>
             
@@ -119,7 +117,7 @@
             </div>
 
             <div id="palette-picker-container"></div>
-            <div class="brand">J.S. Bach · Master Edition</div>
+            <div class="brand">Bach · Master Edition</div>
         </div>
         
         <div id="scrubber-container">
