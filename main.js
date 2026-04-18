@@ -1,10 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach · A quiet window into counterpoint — v5.2
-// Zero heavy math in render loop. All analysis pre-calculated once.
-// Only canon identification (five‑dot ghost handoff) is shown.
+// Bach · A quiet window into counterpoint — v5.3
+// Zero heavy math in render loop. All analysis pre‑calculated.
+// Only the five‑dot canon handoff remains visible by default.
+// Enhanced: Fugue mode, improved chords, modulation arrows, Web Worker,
+// cache, idle callbacks, search filter, keyboard shortcuts, localStorage,
+// reverb, preloading, tonal bar restored.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Palettes: ensemble → quartet → tapestry → candlelight → manuscript ────────
+// ── Palettes ─────────────────────────────────────────────────────────────────
 const PALETTES = {
     ensemble:    { name:"Ensemble",    voices:["#E8D4A2","#6B8CAE","#C97B5F","#8FA876","#B08FA0"], ink:"#E8D4A2", gold:"#C9A961" },
     quartet:     { name:"Quartet",     voices:["#D97757","#4A8BA8","#D4A84A","#6B8E5E","#8E6B9E"], ink:"#E8D4A2", gold:"#C9A961" },
@@ -14,7 +17,7 @@ const PALETTES = {
 };
 
 const BG_COLOR       = "#0A0908";
-let   activePalette  = "ensemble";
+let   activePalette  = localStorage.getItem('bach-palette') || "ensemble";
 const getPalette     = () => PALETTES[activePalette];
 
 const SILENT_INTRO        = 1.5;
@@ -40,29 +43,63 @@ const parseTitle = filename => {
     return { title: pretty||'Untitled', meta: bwv };
 };
 
+// ── Web Worker for MIDI parsing (embedded as Blob) ───────────────────────────
+const workerCode = `
+    importScripts('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js');
+    self.onmessage = function(e) {
+        const buf = e.data;
+        try {
+            const midi = new Midi(buf);
+            const notes = [];
+            let dur = 0;
+            midi.tracks.forEach((t, i) => {
+                t.notes.forEach(n => {
+                    notes.push({time:n.time, duration:n.duration, midi:n.midi, velocity:n.velocity, track:i});
+                    dur = Math.max(dur, n.time + n.duration);
+                });
+            });
+            self.postMessage({ notes, dur, tempo: midi.header.tempos[0]?.bpm || 80 });
+        } catch (err) {
+            self.postMessage({ error: err.message });
+        }
+    };
+`;
+const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+const workerUrl = URL.createObjectURL(workerBlob);
+const midiWorker = new Worker(workerUrl);
+
 // ═══ Library ═══════════════════════════════════════════════════════════════════
 class BachLibrary {
-    constructor() { this.works = new Map(); this.tree = {}; }
+    constructor() {
+        this.works = new Map();
+        this.tree = {};
+        this.loaded = false;
+    }
     async load(url) {
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error("Failed to fetch: "+resp.status);
-        const zip = await window.JSZip.loadAsync(await resp.blob());
-        const files = [];
-        zip.forEach((rel, entry) => {
-            if (entry.dir || !rel.match(/\.(mid|midi)$/i)) return;
-            const clean  = rel.replace(/^bach\//,'');
-            const folder = clean.split('/')[0] || 'Miscellaneous';
-            if (!this.tree[folder]) this.tree[folder] = [];
-            this.tree[folder].push(clean);
-            files.push({ name: clean, entry });
-        });
-        for (const f of files) this.works.set(f.name, await f.entry.async("arraybuffer"));
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const zip = await window.JSZip.loadAsync(await resp.blob());
+            const files = [];
+            zip.forEach((rel, entry) => {
+                if (entry.dir || !rel.match(/\.(mid|midi)$/i)) return;
+                const clean  = rel.replace(/^bach\//,'');
+                const folder = clean.split('/')[0] || 'Miscellaneous';
+                if (!this.tree[folder]) this.tree[folder] = [];
+                this.tree[folder].push(clean);
+                files.push({ name: clean, entry });
+            });
+            for (const f of files) this.works.set(f.name, await f.entry.async("arraybuffer"));
+            this.loaded = true;
+        } catch (e) {
+            console.error("Library load failed:", e);
+            this.loaded = false;
+            throw e;
+        }
     }
 }
 
 // ═══ AnalysisEngine ════════════════════════════════════════════════════════════
-// Called ONCE after track load. All arrays are static and read-only.
-// Render loop uses only O(log n) binary searches into these arrays.
 class AnalysisEngine {
     constructor() {
         this.motifs        = [];
@@ -74,6 +111,7 @@ class AnalysisEngine {
         this.insightEvents = [];
         this.tempo         = 80;
         this.ready         = false;
+        this.fugueMode     = false;
     }
 
     analyze(notes, totalTime, tempo) {
@@ -93,7 +131,6 @@ class AnalysisEngine {
         this.ready = true;
     }
 
-    // O(log n) binary searches — safe to call every frame
     keyAt(t)   { return AnalysisEngine._bseg(this.keySegments,   t); }
     chordAt(t) { return AnalysisEngine._bseg(this.chordTimeline, t); }
     insightAt(t) {
@@ -124,7 +161,6 @@ class AnalysisEngine {
         return null;
     }
 
-    // ── Stable chord timeline: only shows chords held ≥ 1 beat ───────────────
     _buildChordTimeline(notes, totalTime) {
         const bd=60/this.tempo, MIN=bd*1.0, STEP=bd*0.5;
         let rName=null, rData=null, rStart=0;
@@ -158,6 +194,7 @@ class AnalysisEngine {
             {n:"⁷",iv:[0,4,7,10],p:9},{n:"maj⁷",iv:[0,4,7,11],p:9},
             {n:"m⁷",iv:[0,3,7,10],p:9},{n:"ø",iv:[0,3,6,10],p:8},
             {n:"°⁷",iv:[0,3,6,9],p:7},{n:"sus⁴",iv:[0,5,7],p:5},{n:"sus²",iv:[0,2,7],p:5},
+            {n:"♭II",iv:[1,5,8],p:8},{n:"It⁶",iv:[8,0,4],p:7},{n:"Fr⁶",iv:[8,0,2,6],p:7},{n:"Ger⁶",iv:[8,0,3,6],p:7}
         ];
         const NN=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
         let best=null;
@@ -177,7 +214,6 @@ class AnalysisEngine {
         return best;
     }
 
-    // ── Subject / motif detection ──────────────────────────────────────────────
     _detectMotifs(notes) {
         const tracks={};
         notes.forEach(n=>{ if(!tracks[n.track]) tracks[n.track]=[]; tracks[n.track].push(n); });
@@ -202,7 +238,15 @@ class AnalysisEngine {
                 for (let j=0;j<sl.length-1;j++)
                     if (sl[j+1].time-(sl[j].time+sl[j].duration)>GAP){ok=false;break;}
                 if (!ok) continue;
-                if (contour(sl).join(',')===key)
+                const ctr=contour(sl).join(',');
+                const matches = (ctr===key);
+                let fugueMatch = false;
+                if (this.fugueMode) {
+                    const inv = sl.map((n,idx)=> ({...n, midi: sl[0].midi - (n.midi - sl[0].midi) })).sort((a,b)=>a.time-b.time);
+                    const rev = [...sl].reverse();
+                    fugueMatch = contour(inv).join(',')===key || contour(rev).join(',')===key;
+                }
+                if (matches || fugueMatch)
                     entries.push({track:id,notes:sl,time:sl[0].time,endTime:sl[sl.length-1].time+sl[sl.length-1].duration});
             }
         });
@@ -210,7 +254,6 @@ class AnalysisEngine {
         return entries.length>=2?[{contour:key.split(',').map(Number),entries}]:[];
     }
 
-    // ── Enhanced ghost paths with motif contour data ───────────────────────────
     _buildGhostPaths(entries) {
         const paths=[];
         for (let i=0;i<entries.length-1;i++){
@@ -235,9 +278,8 @@ class AnalysisEngine {
         return paths;
     }
 
-    // ── Insight events: pre-calculated commentary (kept for internal use only) ─
     _buildInsightEvents() {
-        const events=[], bd=60/this.tempo;
+        const events=[];
         let lastKey=null;
         this.keySegments.forEach(seg=>{
             const k=seg.key+seg.mode;
@@ -265,7 +307,6 @@ class AnalysisEngine {
         return events.sort((a,b)=>a.time-b.time);
     }
 
-    // ── Tonal journey (Krumhansl-Kessler) ─────────────────────────────────────
     _detectKeys(notes, totalTime) {
         const KM=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
         const Km=[6.33,2.68,3.52,5.38,2.60,3.53,2.54,4.75,3.98,2.69,3.34,3.17];
@@ -301,7 +342,6 @@ class AnalysisEngine {
         return merged;
     }
 
-    // ── Cadence detection (V→I) ────────────────────────────────────────────────
     _detectCadences(notes, ks) {
         const bd=60/this.tempo, STEP=bd*2;
         const total=notes.reduce((m,n)=>Math.max(m,n.time+n.duration),0);
@@ -320,7 +360,6 @@ class AnalysisEngine {
         return cads.filter((c,i)=>i===0||c.time-cads[i-1].time>bd*4);
     }
 
-    // ── Pedal points (sustained bass) ─────────────────────────────────────────
     _detectPedalPoints(notes) {
         const bd=60/this.tempo;
         const bass=notes.filter(n=>n.midi<52&&n.duration>=bd*2);
@@ -339,6 +378,8 @@ class AnalysisEngine {
 // ═══ AudioEngine ═══════════════════════════════════════════════════════════════
 class AudioEngine {
     constructor() {
+        this.reverb = new Tone.Convolver({ url: 'https://tonejs.github.io/audio/impulse-responses/hall.wav' }).toDestination();
+        this.reverb.wet.value = 0.2;
         this.sampler = new Tone.Sampler({
             urls:{
                 A0:"A0.mp3",C1:"C1.mp3","D#1":"Ds1.mp3","F#1":"Fs1.mp3",
@@ -351,24 +392,31 @@ class AudioEngine {
             },
             baseUrl:"https://tonejs.github.io/audio/salamander/",
             release:0.6
-        }).toDestination();
+        }).connect(this.reverb);
         this.sampler.volume.value=-3;
         this.notes=[]; this.isPlaying=false; this.pauseOffset=0;
         this.scheduledIds=[]; this.tempo=80; this.introTimeoutId=null;
         this.dynamicsAmount=0.4;
-        this.soloedTracks=new Set(); // empty = all voices active
+        this.soloedTracks=new Set();
+        this.reverbEnabled = true;
+    }
+    setReverb(on) {
+        this.reverbEnabled = on;
+        this.reverb.wet.value = on ? 0.2 : 0;
     }
     loadTrack(buf) {
-        const midi=new window.Midi(buf);
-        this.tempo=(midi.header.tempos?.[0]?.bpm)||80;
-        const notes=[]; let dur=0;
-        midi.tracks.forEach((t,i)=>{
-            t.notes.forEach(n=>{
-                notes.push({time:n.time,duration:n.duration,midi:n.midi,velocity:n.velocity,track:i});
-                dur=Math.max(dur,n.time+n.duration);
-            });
+        return new Promise((resolve, reject) => {
+            midiWorker.onmessage = (e) => {
+                const data = e.data;
+                if (data.error) reject(new Error(data.error));
+                else {
+                    this.notes = data.notes;
+                    this.tempo = data.tempo;
+                    resolve(data.dur);
+                }
+            };
+            midiWorker.postMessage(buf);
         });
-        this.notes=notes; return dur;
     }
     clearScheduled(){this.scheduledIds.forEach(id=>Tone.Transport.clear(id));this.scheduledIds=[];Tone.Transport.cancel(0);}
     cancelIntro(){if(this.introTimeoutId){clearTimeout(this.introTimeoutId);this.introTimeoutId=null;}}
@@ -378,10 +426,11 @@ class AudioEngine {
         const go=()=>{
             Tone.Transport.seconds=startAt;
             const solo=this.soloedTracks;
+            const dynFactor = Math.pow(this.dynamicsAmount, 1.5);
             this.notes.forEach(n=>{
                 if(n.time<startAt-0.01) return;
                 const isSoloed=solo.size>0&&!solo.has(n.track);
-                const vel=isSoloed?0.03:0.5+(n.velocity-0.5)*this.dynamicsAmount;
+                const vel=isSoloed?0.03:0.5+(n.velocity-0.5)*dynFactor;
                 const id=Tone.Transport.schedule(t=>{
                     this.sampler.triggerAttackRelease(
                         Tone.Frequency(n.midi,"midi").toNote(),Math.max(n.duration,0.05),t,vel);
@@ -401,12 +450,12 @@ class AudioEngine {
 }
 
 // ═══ Renderer ══════════════════════════════════════════════════════════════════
-// draw() is DRAW-ONLY. Binary searches and simple arithmetic — no musical analysis.
 class Renderer {
     constructor(canvas) {
         this.canvas=canvas; this.ctx=canvas.getContext("2d",{alpha:false});
         this.notes=[]; this.notesSorted=[]; this.totalTime=0; this.isAnimating=false;
-        this.view="architectural"; this.minMidi=36; this.maxMidi=84;
+        this.view=localStorage.getItem('bach-view') || "architectural";
+        this.minMidi=36; this.maxMidi=84;
         this.tempo=80; this.measureDur=2; this.visualStartTime=0; this.smoothNow=0;
         this.hoveredVoice=null; this.voiceGroups={};
         this.analysisData=null;
@@ -457,7 +506,6 @@ class Renderer {
         return {top,bottom,height,playheadX:phX,rightPad:rPad,pxPerSec:pps};
     }
 
-    // ── Draw entry point ───────────────────────────────────────────────────────
     draw(audioTime, inIntro=false, introProgress=0) {
         const {w,h}=this.resize();
         this.ctx.fillStyle=BG_COLOR; this.ctx.fillRect(0,0,w,h);
@@ -474,7 +522,7 @@ class Renderer {
         this.ctx.globalAlpha=Math.max(0.001,gFade*eFade);
 
         this._drawPitchAxis(w,top,height);
-
+        this._drawTonalBar(now,w,h);
         if(this.view!=='voice-constellation')
             this._drawTimeGrid(now,w,top,height,playheadX,pxPerSec);
 
@@ -482,7 +530,6 @@ class Renderer {
         else if (this.view==='melodic-contour')     this._drawMelodicContour(now,w,top,height,playheadX,pxPerSec);
         else if (this.view==='voice-constellation') this._drawVoiceConstellation(Math.max(0,audioTime),w,h);
 
-        // Only the canon handoff (five dots) remains
         if(this.analysisData?.ready && this.view!=='voice-constellation'){
             this._drawGhostHandoff(now,w,top,height,playheadX,pxPerSec);
         }
@@ -503,6 +550,28 @@ class Renderer {
                 this.ctx.restore();
             }
         }
+    }
+
+    _drawTonalBar(now, w, h) {
+        const ctx=this.ctx, total=this.totalTime, ba=ctx.globalAlpha;
+        ctx.save(); ctx.globalAlpha=ba*0.55;
+        const segs = this.analysisData?.keySegments || [];
+        segs.forEach((s,i)=>{
+            const x0=Math.floor((s.time/total)*w), x1=Math.floor((s.endTime/total)*w);
+            ctx.fillStyle=s.color;
+            ctx.fillRect(x0,h-1,Math.max(1,x1-x0),1);
+            if(i>0 && segs[i-1].key !== s.key) {
+                const prev = segs[i-1];
+                ctx.fillStyle = 'rgba(201,169,97,0.7)';
+                ctx.font = 'italic 8px "EB Garamond", serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('→', x0-2, h-4);
+            }
+        });
+        const px=Math.floor((Math.max(0,now)/total)*w);
+        ctx.fillStyle='rgba(255,248,220,0.85)';
+        ctx.fillRect(px-1,h-3,2,3);
+        ctx.restore();
     }
 
     _drawPitchAxis(w, top, height) {
@@ -550,7 +619,6 @@ class Renderer {
         ctx.restore();
     }
 
-    // ── Architectural view ─────────────────────────────────────────────────────
     _drawArchitectural(now, w, top, height, playheadX, pxPerSec) {
         const lb=3.5, we=now+(w-playheadX)/pxPerSec+0.5, ws=now-lb;
         const ba=this.ctx.globalAlpha, pal=getPalette(), solo=this.soloedTracks;
@@ -583,7 +651,6 @@ class Renderer {
         }
     }
 
-    // ── Melodic Contour view ───────────────────────────────────────────────────
     _drawMelodicContour(now, w, top, height, playheadX, pxPerSec) {
         const lb=4, fwd=(w-playheadX)/pxPerSec+0.5;
         const ba=this.ctx.globalAlpha, pal=getPalette(), solo=this.soloedTracks;
@@ -617,7 +684,6 @@ class Renderer {
         });
     }
 
-    // ── Voice Constellation ────────────────────────────────────────────────────
     _drawVoiceConstellation(now, w, h) {
         const mb=isMobile(), top=mb?60:90, bot=mb?40:60;
         const height=Math.max(10,h-top-bot), cx=Math.floor(w/2);
@@ -637,7 +703,6 @@ class Renderer {
         }
         ctx.restore();
 
-        // Chord from pre-calculated stable timeline (we still compute it but only show here)
         const chord=this.analysisData?.ready?this.analysisData.chordAt(now):null;
         if(chord?.name){
             const QM={
@@ -696,7 +761,6 @@ class Renderer {
         });
     }
 
-    // ── Canon Ghost Hand-off (five dots) — the only analysis overlay kept ─────
     _drawGhostHandoff(now, w, top, height, playheadX, pxPerSec) {
         if(!this.analysisData?.ghostPaths.length) return;
         const pal=getPalette(), ba=this.ctx.globalAlpha;
@@ -705,15 +769,12 @@ class Renderer {
             if(now<path.startTime||now>path.endTime+0.45) return;
             const raw=(now-path.startTime)/dur;
             const prog=Math.min(1, Math.max(0, raw));
-            // Ease in-out
             const t=prog<0.5 ? 2*prog*prog : 1-2*(1-prog)*(1-prog);
-            // Plateau + graceful fade: holds longer, then fades elegantly
             let fade;
             if (prog < 0.1) fade = prog / 0.1;
             else if (prog > 0.75) fade = Math.max(0, 1 - (prog - 0.75) / 0.25);
             else fade = 1.0;
-            fade *= 0.95; // slight overall softness
-
+            fade *= 0.95;
             if(fade < 0.01) return;
 
             const fromY=Math.floor(this.midiToY(path.fromMidi,top,height));
@@ -728,17 +789,17 @@ class Renderer {
 
             const color=pal.voices[path.fromTrack%pal.voices.length];
             const ctx=this.ctx;
-
             ctx.save();
-            // Arc trail
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8;
             ctx.globalAlpha=ba*fade*0.18;
             ctx.strokeStyle=color; ctx.lineWidth=1.2;
             ctx.beginPath();
             ctx.moveTo(fromX,fromY);
             ctx.quadraticCurveTo(cpX,cpY,cx,cy);
             ctx.stroke();
+            ctx.shadowBlur = 0;
 
-            // Motif contour cluster (five dots)
             const noteCount=path.noteMidis.length;
             path.noteMidis.forEach((midi,i)=>{
                 const tFrac=path.duxDuration>0 ? path.noteTimeOffsets[i]/path.duxDuration : i/(noteCount-1||1);
@@ -747,21 +808,20 @@ class Renderer {
                 const dotY=Math.floor(naturalY*(1-t)+cy*t);
                 const isFirst=i===0;
                 let dotAlpha = ba * fade * (isFirst ? 0.72 : 0.45);
-                if (t > 0.8) {
-                    const merge = (t-0.8)/0.2;
-                    dotAlpha *= (1 - merge);
-                }
+                if (t > 0.8) { const merge = (t-0.8)/0.2; dotAlpha *= (1 - merge); }
                 ctx.globalAlpha = Math.min(1, dotAlpha);
                 ctx.fillStyle = color;
+                ctx.shadowBlur = isFirst ? 6 : 3;
+                ctx.shadowColor = color;
                 ctx.beginPath();
                 ctx.arc(dotX, dotY, isFirst ? 4.5 : 2.8, 0, Math.PI*2);
                 ctx.fill();
             });
 
-            // Elegant arrival pulse at destination
             if(t > 0.7){
                 const arrivalFade = Math.min(1, (t-0.7)/0.3) * (1 - Math.max(0, (prog-0.9)/0.1));
                 if(arrivalFade > 0.01){
+                    ctx.shadowBlur = 0;
                     ctx.globalAlpha = ba * arrivalFade * 0.5;
                     ctx.strokeStyle = color;
                     ctx.lineWidth = 1.2;
@@ -816,11 +876,35 @@ document.addEventListener("DOMContentLoaded", async () => {
     const dynSlider     = document.getElementById("dynamics-slider");
     const dynLabel      = document.getElementById("dynamics-label");
     const voiceIso      = document.getElementById("voice-iso");
+    const fugueToggle   = document.getElementById("fugue-toggle");
+    const reverbToggle  = document.getElementById("reverb-toggle");
+    const filterInput   = document.getElementById("work-filter");
+    const tooltip       = document.getElementById("tooltip");
 
+    vSel.value = ren.view;
     let hasPlayedOnce=false, introActive=false, introStartWallTime=0;
     let soloedTracks=new Set();
+    const analysisCache = new Map();
 
     ren.clear();
+
+    // Tooltip
+    const showTooltip = (el, text) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        tooltip.style.opacity = 1;
+        tooltip.textContent = text;
+        tooltip.style.left = rect.left + rect.width/2 + 'px';
+        tooltip.style.top = rect.bottom + 8 + 'px';
+        tooltip.style.transform = 'translateX(-50%)';
+    };
+    const hideTooltip = () => tooltip.style.opacity = 0;
+    document.querySelectorAll('[title]').forEach(el => {
+        const text = el.getAttribute('title');
+        el.removeAttribute('title');
+        el.addEventListener('mouseenter', () => showTooltip(el, text));
+        el.addEventListener('mouseleave', hideTooltip);
+    });
 
     const ro = new ResizeObserver(() => {
         if (!ren.isAnimating) {
@@ -873,14 +957,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (dynSlider) {
-        dynSlider.value = Math.round(engine.dynamicsAmount * 100);
+        const savedDyn = localStorage.getItem('bach-dynamics');
+        if (savedDyn) dynSlider.value = savedDyn;
         const upd = v => {
-            if (!dynLabel) return;
-            const p = Math.round(v);
-            dynLabel.textContent = p<=5?'organ':p<=30?'subtle':p<=60?'expressive':p<=80?'dramatic':'full';
+            engine.dynamicsAmount = v/100;
+            dynLabel.textContent = v<=5?'organ':v<=30?'subtle':v<=60?'expressive':v<=80?'dramatic':'full';
+            localStorage.setItem('bach-dynamics', v);
         };
         upd(dynSlider.value);
-        dynSlider.addEventListener("input", e => { engine.dynamicsAmount=e.target.value/100; upd(e.target.value); });
+        dynSlider.addEventListener("input", e => upd(e.target.value));
     }
 
     function renderPaletteToggle() {
@@ -901,6 +986,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             btn.appendChild(sw); btn.appendChild(lbl);
             btn.onclick=e=>{
                 e.stopPropagation(); activePalette=key;
+                localStorage.setItem('bach-palette', key);
                 renderPaletteToggle(); renderPaletteMenu();
                 paletteMenu.classList.remove("open");
                 if(!ren.isAnimating&&ren.notes.length>0) ren.draw(engine.pauseOffset||0,false);
@@ -912,28 +998,74 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener("click",e=>{if(!paletteMenu.contains(e.target)&&e.target!==paletteToggle)paletteMenu.classList.remove("open");});
     renderPaletteToggle(); renderPaletteMenu();
 
+    // Fugue toggle
+    fugueToggle.addEventListener('click', () => {
+        analysis.fugueMode = !analysis.fugueMode;
+        fugueToggle.classList.toggle('active', analysis.fugueMode);
+        if (ren.analysisData?.ready) {
+            analysis.analyze(engine.notes, ren.totalTime, engine.tempo);
+            ren.analysisData = analysis;
+            if (!ren.isAnimating) ren.draw(engine.pauseOffset||0, false);
+        }
+    });
+
+    // Reverb toggle
+    reverbToggle.classList.add('active');
+    reverbToggle.addEventListener('click', () => {
+        const on = !engine.reverbEnabled;
+        engine.setReverb(on);
+        reverbToggle.classList.toggle('active', on);
+    });
+
+    // Load library
     try {
         await lib.load("./bach.zip");
+        populateSelector();
+    } catch(e) {
+        titleEl.textContent = "bach.zip not found";
+        titleEl.classList.remove("loading","breathing");
+        metaEl.textContent = "place the library file in the same folder";
+        tSel.disabled = true;
+        playBtn.disabled = true;
+    }
+
+    function populateSelector() {
         tSel.innerHTML = "";
         const folders = Object.entries(lib.tree).sort(([a],[b])=>a.localeCompare(b));
         if (!folders.length) {
             tSel.innerHTML="<option>No MIDI files found</option>";
             titleEl.textContent="Library empty"; titleEl.classList.remove("breathing","loading");
-        } else {
-            folders.forEach(([f,files])=>{
-                const g=document.createElement("optgroup"); g.label=f;
-                files.sort().forEach(file=>{
-                    const o=document.createElement("option"); o.value=file; o.textContent=parseTitle(file).title;
-                    g.appendChild(o);
-                });
-                tSel.appendChild(g);
-            });
-            tSel.disabled=false; playBtn.disabled=false; updateTitle(true);
+            return;
         }
-    } catch(e) {
-        console.error("Library load failed:",e);
-        titleEl.textContent="Could not load library"; titleEl.classList.remove("breathing","loading");
+        folders.forEach(([f,files])=>{
+            const g=document.createElement("optgroup"); g.label=f;
+            files.sort().forEach(file=>{
+                const o=document.createElement("option"); o.value=file; o.textContent=parseTitle(file).title;
+                g.appendChild(o);
+            });
+            tSel.appendChild(g);
+        });
+        tSel.disabled=false; playBtn.disabled=false;
+        updateTitle(true);
     }
+
+    filterInput.addEventListener('input', () => {
+        const filter = filterInput.value.toLowerCase();
+        Array.from(tSel.options).forEach(opt => {
+            if (opt.parentNode.tagName === 'OPTGROUP') {
+                const group = opt.parentNode;
+                let visible = false;
+                Array.from(group.options).forEach(o => {
+                    const match = o.textContent.toLowerCase().includes(filter);
+                    o.hidden = !match;
+                    if (match) visible = true;
+                });
+                group.hidden = !visible;
+            } else {
+                opt.hidden = !opt.textContent.toLowerCase().includes(filter);
+            }
+        });
+    });
 
     function updateTitle(immediate) {
         const apply=()=>{
@@ -947,6 +1079,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     vSel.onchange=e=>{
         ren.view=e.target.value;
+        localStorage.setItem('bach-view', ren.view);
         if(!ren.isAnimating&&ren.notes.length>0) ren.draw(engine.pauseOffset||0,false);
         else if(!ren.isAnimating) ren.clear();
     };
@@ -995,13 +1128,29 @@ document.addEventListener("DOMContentLoaded", async () => {
         try{
             if(ren.notes.length===0){
                 const buf=lib.works.get(tSel.value); if(!buf) return;
-                const dur=engine.loadTrack(buf);
-                ren.setup(engine.notes,dur,engine.tempo);
-                buildVoiceButtons();
-                setTimeout(()=>{
-                    analysis.analyze(engine.notes,dur,engine.tempo);
-                    ren.analysisData=analysis;
-                },0);
+                const cacheKey = tSel.value;
+                if (analysisCache.has(cacheKey)) {
+                    const cached = analysisCache.get(cacheKey);
+                    engine.notes = cached.notes;
+                    engine.tempo = cached.tempo;
+                    ren.setup(cached.notes, cached.dur, cached.tempo);
+                    analysis.ready = true;
+                    Object.assign(analysis, cached.analysis);
+                    ren.analysisData = analysis;
+                    buildVoiceButtons();
+                } else {
+                    const dur = await engine.loadTrack(buf);
+                    ren.setup(engine.notes, dur, engine.tempo);
+                    buildVoiceButtons();
+                    await new Promise(resolve => {
+                        requestIdleCallback ? requestIdleCallback(() => {
+                            analysis.analyze(engine.notes, dur, engine.tempo);
+                            ren.analysisData = analysis;
+                            analysisCache.set(cacheKey, { notes: engine.notes, dur, tempo: engine.tempo, analysis: {...analysis} });
+                            resolve();
+                        }, { timeout: 2000 }) : (() => { analysis.analyze(engine.notes, dur, engine.tempo); ren.analysisData = analysis; resolve(); })();
+                    });
+                }
             }
             await Tone.loaded();
             const useIntro=!hasPlayedOnce&&engine.pauseOffset===0;
@@ -1071,6 +1220,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener("keydown",e=>{
         if(e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
         if(e.code==="Space"){e.preventDefault();if(!playBtn.disabled)playBtn.click();}
+        else if(e.code==="Digit1"||e.code==="Digit2"||e.code==="Digit3"){
+            e.preventDefault();
+            const views = ['architectural','melodic-contour','voice-constellation'];
+            const idx = parseInt(e.code.slice(-1))-1;
+            if(views[idx]){ vSel.value = views[idx]; vSel.dispatchEvent(new Event('change')); }
+        }
         else if(e.code==="ArrowLeft"||e.code==="ArrowRight"){
             if(ren.totalTime<=0) return; e.preventDefault();
             const delta=e.code==="ArrowLeft"?-5:5;
@@ -1084,5 +1239,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    ren.clear();
+    // Preload samples
+    Tone.loaded().then(() => {});
 });
