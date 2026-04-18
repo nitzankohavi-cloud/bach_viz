@@ -1,10 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach · A quiet window into counterpoint — v5.4 (ZIP loading fixed)
-// Zero heavy math in render loop. All analysis pre‑calculated.
-// Enhanced: Fugue mode, improved chords, modulation arrows, Web Worker,
-// cache, idle callbacks, search filter, keyboard shortcuts, localStorage,
-// reverb, preloading, tonal bar restored.
+// Bach · A quiet window into counterpoint — v5.4 (Diagnostic)
+// ZIP loading is the original working logic. Enhanced with voice iso, fugue, reverb, search.
 // ═══════════════════════════════════════════════════════════════════════════════
+
+console.log('🚀 Bach v5.4 starting...');
 
 // ── Palettes ─────────────────────────────────────────────────────────────────
 const PALETTES = {
@@ -42,12 +41,14 @@ const parseTitle = filename => {
     return { title: pretty||'Untitled', meta: bwv };
 };
 
-// ═══ Library (ORIGINAL WORKING VERSION – DO NOT MODIFY) ════════════════════════
+// ═══ Library (Original Working Version) ════════════════════════════════════════
 class BachLibrary {
     constructor() { this.works = new Map(); this.tree = {}; }
     async load(url) {
+        console.log(`📚 Loading library from ${url}...`);
         const resp = await fetch(url);
         if (!resp.ok) throw new Error("Failed to fetch: "+resp.status);
+        console.log('📦 ZIP fetched, parsing...');
         const zip = await window.JSZip.loadAsync(await resp.blob());
         const files = [];
         zip.forEach((rel, entry) => {
@@ -58,11 +59,15 @@ class BachLibrary {
             this.tree[folder].push(clean);
             files.push({ name: clean, entry });
         });
-        for (const f of files) this.works.set(f.name, await f.entry.async("arraybuffer"));
+        console.log(`📁 Found ${files.length} MIDI files in ${Object.keys(this.tree).length} folders.`);
+        for (const f of files) {
+            this.works.set(f.name, await f.entry.async("arraybuffer"));
+        }
+        console.log('✅ Library loaded successfully.');
     }
 }
 
-// ═══ AnalysisEngine ════════════════════════════════════════════════════════════
+// ═══ AnalysisEngine (Fugue mode added) ═════════════════════════════════════════
 class AnalysisEngine {
     constructor() {
         this.motifs        = [];
@@ -96,21 +101,11 @@ class AnalysisEngine {
 
     keyAt(t)   { return AnalysisEngine._bseg(this.keySegments,   t); }
     chordAt(t) { return AnalysisEngine._bseg(this.chordTimeline, t); }
-    insightAt(t) {
-        const a = this.insightEvents;
-        let lo=0, hi=a.length-1, r=null;
-        while (lo<=hi) {
-            const m=(lo+hi)>>1;
-            if (a[m].time<=t){r=a[m];lo=m+1;} else hi=m-1;
-        }
-        return (r && t < r.time+r.duration) ? r : null;
-    }
 
     voiceNameFor(track, vg) {
         const ns=vg[track]||[], avg=ns.length?ns.reduce((s,n)=>s+n.midi,0)/ns.length:60;
         return avg>72?'Soprano':avg>60?'Alto':avg>48?'Tenor':'Bass';
     }
-    voiceInitial(track, vg) { return this.voiceNameFor(track,vg)[0]; }
 
     static _bseg(arr, t) {
         if (!arr||!arr.length) return null;
@@ -338,7 +333,7 @@ class AnalysisEngine {
     }
 }
 
-// ═══ AudioEngine ═══════════════════════════════════════════════════════════════
+// ═══ AudioEngine (with reverb and Web Worker) ══════════════════════════════════
 class AudioEngine {
     constructor() {
         this.reverb = new Tone.Convolver({ url: 'https://tonejs.github.io/audio/impulse-responses/hall.wav' }).toDestination();
@@ -370,7 +365,6 @@ class AudioEngine {
     loadTrack(buf) {
         return new Promise((resolve, reject) => {
             if (!window.midiWorker) {
-                // Create worker on first use
                 const workerCode = `
                     importScripts('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js');
                     self.onmessage = function(e) {
@@ -438,7 +432,7 @@ class AudioEngine {
     stop(){this.cancelIntro();this.isPlaying=false;Tone.Transport.stop();this.clearScheduled();this.pauseOffset=0;this.sampler.releaseAll();}
 }
 
-// ═══ Renderer (with tonal bar, modulation arrows, and handoff glow) ════════════
+// ═══ Renderer (Tonal bar + Ghost handoff only) ═════════════════════════════════
 class Renderer {
     constructor(canvas) {
         this.canvas=canvas; this.ctx=canvas.getContext("2d",{alpha:false});
@@ -845,6 +839,7 @@ class Renderer {
 
 // ═══ App ═══════════════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
+    console.log('🖥️ DOM ready, initializing app...');
     const canvas   = document.getElementById("visualizer");
     const ren      = new Renderer(canvas);
     const engine   = new AudioEngine();
@@ -1003,12 +998,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         reverbToggle.classList.toggle('active', on);
     });
 
-    // ── Library loading (original working logic) ──────────────────────────────
+    // ── Library loading (ORIGINAL WORKING LOGIC) ──────────────────────────────
     try {
+        console.log('📂 Attempting to load bach.zip...');
         await lib.load("./bach.zip");
+        console.log('✅ Bach.zip loaded, populating selector...');
         populateSelector();
     } catch(e) {
-        console.error("Library load failed:", e);
+        console.error('❌ Library load failed:', e);
         titleEl.textContent = "bach.zip not found";
         titleEl.classList.remove("breathing","loading");
         metaEl.textContent = "place the library file in the same folder";
@@ -1019,6 +1016,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     function populateSelector() {
         tSel.innerHTML = "";
         const folders = Object.entries(lib.tree).sort(([a],[b])=>a.localeCompare(b));
+        console.log(`📁 Populating selector with ${folders.length} folders.`);
         if (!folders.length) {
             tSel.innerHTML="<option>No MIDI files found</option>";
             titleEl.textContent="Library empty"; titleEl.classList.remove("breathing","loading");
@@ -1034,6 +1032,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
         tSel.disabled=false; playBtn.disabled=false;
         updateTitle(true);
+        console.log('✅ Selector populated, ready.');
     }
 
     filterInput.addEventListener('input', () => {
@@ -1226,5 +1225,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    Tone.loaded().then(() => {});
+    Tone.loaded().then(() => console.log('🔊 Audio samples preloaded.'));
+    console.log('🚀 App initialization complete.');
 });
