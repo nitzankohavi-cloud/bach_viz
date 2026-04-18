@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover"/>
 <meta name="theme-color" content="#0A0908"/>
-<title>Bach</title>
+<title>Bach · A Quiet Window</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400;1,500&display=swap">
@@ -12,7 +12,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
 <style>
-/* CSS unchanged from previous version – Roadmap button already removed */
 :root {
   --bg:          #0A0908;
   --bg-warm:     #0F0D0A;
@@ -105,6 +104,13 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
 #play-toggle:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
 #play-toggle:active:not(:disabled){transform:scale(0.98);}
 #play-toggle:disabled{opacity:0.25;cursor:not-allowed;}
+#fugue-toggle, #reverb-toggle{
+  font-family:'EB Garamond',serif;font-size:12px;font-style:italic;
+  color:var(--ink-dim);background:transparent;border:none;
+  padding:4px 0;cursor:pointer;outline:none;transition:color 0.2s;
+  border-bottom:1px dotted transparent;
+}
+#fugue-toggle.active, #reverb-toggle.active{color:var(--gold);border-bottom-color:var(--gold);}
 #voice-iso{display:none;align-items:center;gap:2px;flex-shrink:0;}
 .voice-btn{
   font-family:'EB Garamond',serif;font-style:italic;font-size:13px;letter-spacing:1px;
@@ -163,13 +169,27 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
   letter-spacing:1px;font-variant-numeric:tabular-nums;
   min-width:92px;text-align:right;flex-shrink:0;
 }
+#work-filter{
+  background:transparent;border:none;border-bottom:1px solid var(--ink-faint);
+  color:var(--ink);font-family:'EB Garamond',serif;font-size:14px;font-style:italic;
+  padding:5px 2px;outline:none;width:180px;margin-right:10px;
+}
+#work-filter:focus{border-bottom-color:var(--gold);}
+#work-filter::placeholder{color:var(--ink-dim);font-style:italic;}
+.tooltip{
+  position:fixed;background:var(--bg-warm);color:var(--ink);
+  font-family:'EB Garamond',serif;font-size:12px;font-style:italic;
+  padding:4px 10px;border:1px solid var(--ink-faint);
+  border-radius:20px;pointer-events:none;z-index:200;
+  opacity:0;transition:opacity 0.15s;backdrop-filter:blur(4px);
+}
 footer{
   padding:4px 48px 12px;font-size:9px;letter-spacing:3px;text-transform:uppercase;
   color:rgba(232,212,162,0.16);text-align:right;font-style:italic;flex-shrink:0;
 }
 @keyframes breathe{0%,100%{opacity:0.22;}50%{opacity:0.58;}}
 .breathing{animation:breathe 2.4s ease-in-out infinite;}
-select:focus-visible,button:focus-visible{
+select:focus-visible,button:focus-visible,input:focus-visible{
   outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,169,97,0.08);
 }
 #seek-slider:focus-visible::-webkit-slider-thumb{opacity:1;transform:scale(1.4);}
@@ -178,6 +198,7 @@ select:focus-visible,button:focus-visible{
   #controls{padding:12px 32px 8px;gap:18px;}
   footer{padding:4px 32px 10px;}
   #work-title{font-size:22px;}
+  #work-filter{width:140px;}
 }
 @media(max-width:640px){
   header{padding:16px 20px 10px;flex-wrap:wrap;align-items:center;gap:10px;min-height:52px;}
@@ -197,6 +218,8 @@ select:focus-visible,button:focus-visible{
   #seek-slider::-moz-range-thumb{width:14px;height:14px;}
   #voice-iso{display:none !important;}
   .dyn-group{display:none;}
+  #reverb-toggle, #fugue-toggle{display:none;}
+  #work-filter{width:120px;}
 }
 @media(max-width:380px){
   header{padding:12px 16px 8px;}
@@ -220,6 +243,7 @@ select:focus-visible,button:focus-visible{
 <canvas id="visualizer"></canvas>
 
 <div id="controls">
+  <input type="text" id="work-filter" placeholder="Filter…" aria-label="Filter works" />
   <div class="ctrl-group">
     <span class="ctrl-label">Work</span>
     <select id="track-selector" disabled><option>—</option></select>
@@ -237,6 +261,9 @@ select:focus-visible,button:focus-visible{
 
   <div id="voice-iso"></div>
 
+  <button id="fugue-toggle" title="Detect inversions & retrogrades">Fugue</button>
+  <button id="reverb-toggle" title="Hall ambience">Ambience</button>
+
   <div id="scrubber">
     <div id="scrubber-track"></div>
     <div id="scrubber-progress"></div>
@@ -253,6 +280,9 @@ select:focus-visible,button:focus-visible{
 </div>
 
 <footer>Johann Sebastian Bach · 1685–1750</footer>
+
+<div id="tooltip" class="tooltip"></div>
+
 <script src="./bach-v5-main.js"></script>
 </body>
 </html>
