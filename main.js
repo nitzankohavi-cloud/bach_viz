@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach · A quiet window into counterpoint — v5.3 (ZIP loading fixed)
+// Bach · A quiet window into counterpoint — v5.4 (ZIP loading fixed)
 // Zero heavy math in render loop. All analysis pre‑calculated.
-// Only the five‑dot canon handoff remains visible by default.
 // Enhanced: Fugue mode, improved chords, modulation arrows, Web Worker,
 // cache, idle callbacks, search filter, keyboard shortcuts, localStorage,
 // reverb, preloading, tonal bar restored.
@@ -43,12 +42,9 @@ const parseTitle = filename => {
     return { title: pretty||'Untitled', meta: bwv };
 };
 
-// ═══ Library ═══════════════════════════════════════════════════════════════════
+// ═══ Library (ORIGINAL WORKING VERSION – DO NOT MODIFY) ════════════════════════
 class BachLibrary {
-    constructor() {
-        this.works = new Map();
-        this.tree = {};
-    }
+    constructor() { this.works = new Map(); this.tree = {}; }
     async load(url) {
         const resp = await fetch(url);
         if (!resp.ok) throw new Error("Failed to fetch: "+resp.status);
@@ -373,7 +369,33 @@ class AudioEngine {
     }
     loadTrack(buf) {
         return new Promise((resolve, reject) => {
-            midiWorker.onmessage = (e) => {
+            if (!window.midiWorker) {
+                // Create worker on first use
+                const workerCode = `
+                    importScripts('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js');
+                    self.onmessage = function(e) {
+                        const buf = e.data;
+                        try {
+                            const midi = new Midi(buf);
+                            const notes = [];
+                            let dur = 0;
+                            midi.tracks.forEach((t, i) => {
+                                t.notes.forEach(n => {
+                                    notes.push({time:n.time, duration:n.duration, midi:n.midi, velocity:n.velocity, track:i});
+                                    dur = Math.max(dur, n.time + n.duration);
+                                });
+                            });
+                            self.postMessage({ notes, dur, tempo: midi.header.tempos[0]?.bpm || 80 });
+                        } catch (err) {
+                            self.postMessage({ error: err.message });
+                        }
+                    };
+                `;
+                const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(workerBlob);
+                window.midiWorker = new Worker(workerUrl);
+            }
+            window.midiWorker.onmessage = (e) => {
                 const data = e.data;
                 if (data.error) reject(new Error(data.error));
                 else {
@@ -382,7 +404,7 @@ class AudioEngine {
                     resolve(data.dur);
                 }
             };
-            midiWorker.postMessage(buf);
+            window.midiWorker.postMessage(buf);
         });
     }
     clearScheduled(){this.scheduledIds.forEach(id=>Tone.Transport.clear(id));this.scheduledIds=[];Tone.Transport.cancel(0);}
@@ -416,7 +438,7 @@ class AudioEngine {
     stop(){this.cancelIntro();this.isPlaying=false;Tone.Transport.stop();this.clearScheduled();this.pauseOffset=0;this.sampler.releaseAll();}
 }
 
-// ═══ Renderer ══════════════════════════════════════════════════════════════════
+// ═══ Renderer (with tonal bar, modulation arrows, and handoff glow) ════════════
 class Renderer {
     constructor(canvas) {
         this.canvas=canvas; this.ctx=canvas.getContext("2d",{alpha:false});
@@ -823,31 +845,6 @@ class Renderer {
 
 // ═══ App ═══════════════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
-    // Web Worker for MIDI parsing
-    const workerCode = `
-        importScripts('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js');
-        self.onmessage = function(e) {
-            const buf = e.data;
-            try {
-                const midi = new Midi(buf);
-                const notes = [];
-                let dur = 0;
-                midi.tracks.forEach((t, i) => {
-                    t.notes.forEach(n => {
-                        notes.push({time:n.time, duration:n.duration, midi:n.midi, velocity:n.velocity, track:i});
-                        dur = Math.max(dur, n.time + n.duration);
-                    });
-                });
-                self.postMessage({ notes, dur, tempo: midi.header.tempos[0]?.bpm || 80 });
-            } catch (err) {
-                self.postMessage({ error: err.message });
-            }
-        };
-    `;
-    const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(workerBlob);
-    window.midiWorker = new Worker(workerUrl);
-
     const canvas   = document.getElementById("visualizer");
     const ren      = new Renderer(canvas);
     const engine   = new AudioEngine();
@@ -1006,13 +1003,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         reverbToggle.classList.toggle('active', on);
     });
 
+    // ── Library loading (original working logic) ──────────────────────────────
     try {
         await lib.load("./bach.zip");
         populateSelector();
     } catch(e) {
-        console.warn("Library load failed:", e);
+        console.error("Library load failed:", e);
         titleEl.textContent = "bach.zip not found";
-        titleEl.classList.remove("loading","breathing");
+        titleEl.classList.remove("breathing","loading");
         metaEl.textContent = "place the library file in the same folder";
         tSel.disabled = true;
         playBtn.disabled = true;
