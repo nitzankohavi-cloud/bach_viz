@@ -49,7 +49,8 @@ class BachLibrary {
         const resp = await fetch(url);
         if (!resp.ok) throw new Error("Failed to fetch: "+resp.status);
         console.log('📦 ZIP fetched, parsing...');
-        const zip = await window.JSZip.loadAsync(await resp.blob());
+        const jszip = new window.JSZip();
+        const zip = await jszip.loadAsync(await resp.blob()); // קריאה מתוך המופע שיצרת
         const files = [];
         zip.forEach((rel, entry) => {
             if (entry.dir || !rel.match(/\.(mid|midi)$/i)) return;
