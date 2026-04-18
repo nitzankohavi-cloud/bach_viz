@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach · A quiet window into counterpoint — v5.3
+// Bach · A quiet window into counterpoint — v5.3 (ZIP loading fixed)
 // Zero heavy math in render loop. All analysis pre‑calculated.
 // Only the five‑dot canon handoff remains visible by default.
 // Enhanced: Fugue mode, improved chords, modulation arrows, Web Worker,
@@ -43,59 +43,26 @@ const parseTitle = filename => {
     return { title: pretty||'Untitled', meta: bwv };
 };
 
-// ── Web Worker for MIDI parsing (embedded as Blob) ───────────────────────────
-const workerCode = `
-    importScripts('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js');
-    self.onmessage = function(e) {
-        const buf = e.data;
-        try {
-            const midi = new Midi(buf);
-            const notes = [];
-            let dur = 0;
-            midi.tracks.forEach((t, i) => {
-                t.notes.forEach(n => {
-                    notes.push({time:n.time, duration:n.duration, midi:n.midi, velocity:n.velocity, track:i});
-                    dur = Math.max(dur, n.time + n.duration);
-                });
-            });
-            self.postMessage({ notes, dur, tempo: midi.header.tempos[0]?.bpm || 80 });
-        } catch (err) {
-            self.postMessage({ error: err.message });
-        }
-    };
-`;
-const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
-const workerUrl = URL.createObjectURL(workerBlob);
-const midiWorker = new Worker(workerUrl);
-
 // ═══ Library ═══════════════════════════════════════════════════════════════════
 class BachLibrary {
     constructor() {
         this.works = new Map();
         this.tree = {};
-        this.loaded = false;
     }
     async load(url) {
-        try {
-            const resp = await fetch(url);
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const zip = await window.JSZip.loadAsync(await resp.blob());
-            const files = [];
-            zip.forEach((rel, entry) => {
-                if (entry.dir || !rel.match(/\.(mid|midi)$/i)) return;
-                const clean  = rel.replace(/^bach\//,'');
-                const folder = clean.split('/')[0] || 'Miscellaneous';
-                if (!this.tree[folder]) this.tree[folder] = [];
-                this.tree[folder].push(clean);
-                files.push({ name: clean, entry });
-            });
-            for (const f of files) this.works.set(f.name, await f.entry.async("arraybuffer"));
-            this.loaded = true;
-        } catch (e) {
-            console.error("Library load failed:", e);
-            this.loaded = false;
-            throw e;
-        }
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error("Failed to fetch: "+resp.status);
+        const zip = await window.JSZip.loadAsync(await resp.blob());
+        const files = [];
+        zip.forEach((rel, entry) => {
+            if (entry.dir || !rel.match(/\.(mid|midi)$/i)) return;
+            const clean  = rel.replace(/^bach\//,'');
+            const folder = clean.split('/')[0] || 'Miscellaneous';
+            if (!this.tree[folder]) this.tree[folder] = [];
+            this.tree[folder].push(clean);
+            files.push({ name: clean, entry });
+        });
+        for (const f of files) this.works.set(f.name, await f.entry.async("arraybuffer"));
     }
 }
 
@@ -561,7 +528,6 @@ class Renderer {
             ctx.fillStyle=s.color;
             ctx.fillRect(x0,h-1,Math.max(1,x1-x0),1);
             if(i>0 && segs[i-1].key !== s.key) {
-                const prev = segs[i-1];
                 ctx.fillStyle = 'rgba(201,169,97,0.7)';
                 ctx.font = 'italic 8px "EB Garamond", serif';
                 ctx.textAlign = 'center';
@@ -857,6 +823,31 @@ class Renderer {
 
 // ═══ App ═══════════════════════════════════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
+    // Web Worker for MIDI parsing
+    const workerCode = `
+        importScripts('https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js');
+        self.onmessage = function(e) {
+            const buf = e.data;
+            try {
+                const midi = new Midi(buf);
+                const notes = [];
+                let dur = 0;
+                midi.tracks.forEach((t, i) => {
+                    t.notes.forEach(n => {
+                        notes.push({time:n.time, duration:n.duration, midi:n.midi, velocity:n.velocity, track:i});
+                        dur = Math.max(dur, n.time + n.duration);
+                    });
+                });
+                self.postMessage({ notes, dur, tempo: midi.header.tempos[0]?.bpm || 80 });
+            } catch (err) {
+                self.postMessage({ error: err.message });
+            }
+        };
+    `;
+    const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(workerBlob);
+    window.midiWorker = new Worker(workerUrl);
+
     const canvas   = document.getElementById("visualizer");
     const ren      = new Renderer(canvas);
     const engine   = new AudioEngine();
@@ -998,7 +989,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener("click",e=>{if(!paletteMenu.contains(e.target)&&e.target!==paletteToggle)paletteMenu.classList.remove("open");});
     renderPaletteToggle(); renderPaletteMenu();
 
-    // Fugue toggle
     fugueToggle.addEventListener('click', () => {
         analysis.fugueMode = !analysis.fugueMode;
         fugueToggle.classList.toggle('active', analysis.fugueMode);
@@ -1009,7 +999,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    // Reverb toggle
     reverbToggle.classList.add('active');
     reverbToggle.addEventListener('click', () => {
         const on = !engine.reverbEnabled;
@@ -1017,11 +1006,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         reverbToggle.classList.toggle('active', on);
     });
 
-    // Load library
     try {
         await lib.load("./bach.zip");
         populateSelector();
     } catch(e) {
+        console.warn("Library load failed:", e);
         titleEl.textContent = "bach.zip not found";
         titleEl.classList.remove("loading","breathing");
         metaEl.textContent = "place the library file in the same folder";
@@ -1239,6 +1228,5 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     });
 
-    // Preload samples
     Tone.loaded().then(() => {});
 });
