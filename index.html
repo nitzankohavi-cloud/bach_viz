@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
 <style>
+/* CSS unchanged from previous version – Roadmap button already removed */
 :root {
   --bg:          #0A0908;
   --bg-warm:     #0F0D0A;
@@ -34,8 +35,6 @@ body{
   background:radial-gradient(ellipse at center,var(--bg-warm) 0%,var(--bg) 72%);
   padding-top:var(--safe-top);padding-bottom:var(--safe-bottom);
 }
-
-/* ── Header ── */
 header{
   padding:26px 48px 18px;display:flex;align-items:baseline;gap:22px;
   flex-shrink:0;min-height:66px;
@@ -50,8 +49,6 @@ header{
   font-size:10px;letter-spacing:3px;text-transform:uppercase;
   color:var(--ink-dim);font-style:normal;flex-shrink:0;font-variant-numeric:tabular-nums;
 }
-
-/* ── Palette ── */
 .palette-wrapper{position:relative;flex-shrink:0;align-self:center;}
 #palette-toggle{
   background:transparent;border:1px solid var(--ink-faint);width:36px;height:20px;
@@ -79,18 +76,13 @@ header{
 .palette-option.active::after{content:"·";margin-left:auto;color:var(--gold);font-size:18px;line-height:1;}
 .palette-swatches{display:flex;width:48px;height:14px;border-radius:2px;overflow:hidden;flex-shrink:0;}
 .palette-swatches .strip{flex:1;}
-
-/* ── Canvas ── */
 #visualizer{flex:1;width:100%;display:block;cursor:default;min-height:0;touch-action:none;}
-
-/* ── Controls ── */
 #controls{
   padding:14px 48px 10px;display:flex;align-items:center;gap:22px;
   flex-shrink:0;flex-wrap:wrap;
 }
 .ctrl-group{display:flex;align-items:center;gap:10px;}
 .ctrl-label{font-size:9px;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink-dim);}
-
 select{
   font-family:'EB Garamond',serif;font-size:14px;font-style:italic;
   color:var(--ink);background-color:transparent;
@@ -104,8 +96,6 @@ select{
 select:hover:not(:disabled){border-bottom-color:var(--gold);}
 select:disabled{opacity:0.3;cursor:not-allowed;}
 select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
-
-/* ── Play button ── */
 #play-toggle{
   font-family:'EB Garamond',serif;font-size:13px;font-style:italic;letter-spacing:0.5px;
   color:var(--ink);background:transparent;border:1px solid var(--ink-faint);
@@ -115,8 +105,6 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
 #play-toggle:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
 #play-toggle:active:not(:disabled){transform:scale(0.98);}
 #play-toggle:disabled{opacity:0.25;cursor:not-allowed;}
-
-/* ── Voice isolation ── */
 #voice-iso{display:none;align-items:center;gap:2px;flex-shrink:0;}
 .voice-btn{
   font-family:'EB Garamond',serif;font-style:italic;font-size:13px;letter-spacing:1px;
@@ -127,8 +115,6 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
 .voice-btn:hover{color:var(--ink);}
 .voice-btn.solo{color:var(--gold);}
 .voice-btn.muted{color:rgba(232,212,162,0.14);}
-
-/* ── Scrubber ── */
 #scrubber{
   position:relative;flex:1;min-width:140px;height:24px;
   display:flex;align-items:center;cursor:ew-resize;touch-action:none;
@@ -155,8 +141,6 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
 #seek-slider:disabled{cursor:not-allowed;}
 #seek-slider:disabled::-webkit-slider-thumb{opacity:0;}
 #seek-slider:disabled::-moz-range-thumb{opacity:0;}
-
-/* ── Dynamics ── */
 .dyn-group{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 #dynamics-slider{
   -webkit-appearance:none;appearance:none;width:58px;height:1px;
@@ -174,39 +158,27 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
   font-size:9px;letter-spacing:1.5px;text-transform:uppercase;
   color:var(--ink-dim);font-style:italic;min-width:52px;
 }
-
-/* ── Time ── */
 #time-display{
   font-size:11px;font-style:italic;color:var(--ink-dim);
   letter-spacing:1px;font-variant-numeric:tabular-nums;
   min-width:92px;text-align:right;flex-shrink:0;
 }
-
-/* ── Footer ── */
 footer{
   padding:4px 48px 12px;font-size:9px;letter-spacing:3px;text-transform:uppercase;
   color:rgba(232,212,162,0.16);text-align:right;font-style:italic;flex-shrink:0;
 }
-
-/* ── Loading ── */
 @keyframes breathe{0%,100%{opacity:0.22;}50%{opacity:0.58;}}
 .breathing{animation:breathe 2.4s ease-in-out infinite;}
-
-/* ── Focus ── */
 select:focus-visible,button:focus-visible{
   outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,169,97,0.08);
 }
 #seek-slider:focus-visible::-webkit-slider-thumb{opacity:1;transform:scale(1.4);}
-
-/* ── Tablet ── */
 @media(max-width:900px){
   header{padding:20px 32px 14px;}
   #controls{padding:12px 32px 8px;gap:18px;}
   footer{padding:4px 32px 10px;}
   #work-title{font-size:22px;}
 }
-
-/* ── Mobile ── */
 @media(max-width:640px){
   header{padding:16px 20px 10px;flex-wrap:wrap;align-items:center;gap:10px;min-height:52px;}
   #work-title{font-size:18px;white-space:normal;line-height:1.25;flex:1 1 auto;order:1;}
@@ -277,11 +249,10 @@ select:focus-visible,button:focus-visible{
     <span id="dynamics-label"></span>
   </div>
 
-
   <div id="time-display">0:00 / 0:00</div>
 </div>
 
 <footer>Johann Sebastian Bach · 1685–1750</footer>
-<script src="./main.js"></script>
+<script src="./bach-v5-main.js"></script>
 </body>
 </html>
