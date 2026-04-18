@@ -116,22 +116,6 @@ select option{background:var(--bg-warm);color:var(--ink);font-style:normal;}
 #play-toggle:active:not(:disabled){transform:scale(0.98);}
 #play-toggle:disabled{opacity:0.25;cursor:not-allowed;}
 
-/* ── Roadmap toggle — typographic ── */
-#roadmap-toggle{
-  font-family:'EB Garamond',serif;font-size:14px;font-style:italic;
-  letter-spacing:0.3px;color:var(--ink-dim);background:transparent;border:none;
-  padding:4px 0 14px;cursor:pointer;outline:none;position:relative;
-  transition:color 0.35s;-webkit-appearance:none;flex-shrink:0;
-}
-#roadmap-toggle::after{
-  content:'';position:absolute;bottom:4px;left:50%;width:3px;height:3px;
-  border-radius:50%;background:var(--gold);transform:translateX(-50%);opacity:0;
-  transition:opacity 0.35s;box-shadow:0 0 6px var(--gold),0 0 2px var(--gold);
-}
-#roadmap-toggle:hover:not(.active){color:var(--ink);}
-#roadmap-toggle.active{color:var(--gold);}
-#roadmap-toggle.active::after{opacity:1;}
-
 /* ── Voice isolation ── */
 #voice-iso{display:none;align-items:center;gap:2px;flex-shrink:0;}
 .voice-btn{
@@ -293,7 +277,6 @@ select:focus-visible,button:focus-visible{
     <span id="dynamics-label"></span>
   </div>
 
-  <button id="roadmap-toggle" title="Musical Roadmap">Roadmap</button>
 
   <div id="time-display">0:00 / 0:00</div>
 </div>
