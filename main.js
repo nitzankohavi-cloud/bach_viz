@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bach · A quiet window into counterpoint — v5
+// Bach · A quiet window into counterpoint — v5.2
 // Zero heavy math in render loop. All analysis pre-calculated once.
+// Only canon identification (five‑dot ghost handoff) is shown.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ── Palettes: ensemble → quartet → tapestry → candlelight → manuscript ────────
@@ -225,18 +226,16 @@ class AnalysisEngine {
                 toTrack:    b.track,
                 fromMidi:   a.notes[a.notes.length-1].midi,
                 toMidi:     b.notes[0].midi,
-                // Contour morphing data
                 noteMidis:       a.notes.map(n=>n.midi),
                 noteTimeOffsets: a.notes.map(n=>n.time-duxStart),
                 duxDuration:     Math.max(0.1, a.endTime-a.time),
-                // For memory layer: time offset from dux to comes
                 temporalOffset:  b.time-a.time
             });
         }
         return paths;
     }
 
-    // ── Insight events: pre-calculated commentary ──────────────────────────────
+    // ── Insight events: pre-calculated commentary (kept for internal use only) ─
     _buildInsightEvents() {
         const events=[], bd=60/this.tempo;
         let lastKey=null;
@@ -410,7 +409,7 @@ class Renderer {
         this.view="architectural"; this.minMidi=36; this.maxMidi=84;
         this.tempo=80; this.measureDur=2; this.visualStartTime=0; this.smoothNow=0;
         this.hoveredVoice=null; this.voiceGroups={};
-        this.roadmapActive=false; this.analysisData=null;
+        this.analysisData=null;
         this.soloedTracks=new Set();
     }
 
@@ -476,31 +475,17 @@ class Renderer {
 
         this._drawPitchAxis(w,top,height);
 
-        // Always-present 1px tonal bar at bottom edge
-        if(this.analysisData?.ready&&this.totalTime>0)
-            this._drawTonalBar(now,w,h);
-
         if(this.view!=='voice-constellation')
             this._drawTimeGrid(now,w,top,height,playheadX,pxPerSec);
-
-        // Tonal aura when roadmap active
-        if(this.roadmapActive&&this.analysisData?.ready)
-            this._drawTonalAura(now,w,h,top,height);
 
         if      (this.view==='architectural')       this._drawArchitectural(now,w,top,height,playheadX,pxPerSec);
         else if (this.view==='melodic-contour')     this._drawMelodicContour(now,w,top,height,playheadX,pxPerSec);
         else if (this.view==='voice-constellation') this._drawVoiceConstellation(Math.max(0,audioTime),w,h);
 
-        if(this.roadmapActive&&this.analysisData?.ready&&this.view!=='voice-constellation'){
-            this._drawPedalPoints(now,w,top,height,playheadX,pxPerSec);
-            this._drawMemoryLayer(now,w,top,height,playheadX,pxPerSec);
-            this._drawMotifBrackets(now,w,top,height,playheadX,pxPerSec);
+        // Only the canon handoff (five dots) remains
+        if(this.analysisData?.ready && this.view!=='voice-constellation'){
             this._drawGhostHandoff(now,w,top,height,playheadX,pxPerSec);
-            this._drawCadenceDiamonds(now,w,top,height,playheadX,pxPerSec);
         }
-
-        if(this.roadmapActive&&this.analysisData?.ready)
-            this._drawCommentary(now,w,top);
 
         if(this.view!=='voice-constellation')
             this._drawPlayhead(playheadX,top,height);
@@ -518,53 +503,6 @@ class Renderer {
                 this.ctx.restore();
             }
         }
-    }
-
-    // ── Integrated tonal bar: 1px at very bottom, always visible ──────────────
-    _drawTonalBar(now, w, h) {
-        const ctx=this.ctx, total=this.totalTime, ba=ctx.globalAlpha;
-        ctx.save(); ctx.globalAlpha=ba*0.55;
-        this.analysisData.keySegments.forEach(s=>{
-            const x0=Math.floor((s.time/total)*w), x1=Math.floor((s.endTime/total)*w);
-            ctx.fillStyle=s.color;
-            ctx.fillRect(x0,h-1,Math.max(1,x1-x0),1);
-        });
-        const px=Math.floor((Math.max(0,now)/total)*w);
-        ctx.fillStyle='rgba(255,248,220,0.85)';
-        ctx.fillRect(px-1,h-3,2,3);
-        ctx.restore();
-    }
-
-    // ── Subtle tonal aura: barely-there hue at bottom third ───────────────────
-    _drawTonalAura(now, w, h, top, height) {
-        const seg=this.analysisData.keyAt(now);
-        if(!seg) return;
-        const ctx=this.ctx, ba=ctx.globalAlpha;
-        ctx.save();
-        ctx.globalAlpha=ba*0.045;
-        ctx.fillStyle=seg.color;
-        ctx.fillRect(0,Math.floor(h*0.65),w,Math.ceil(h*0.35));
-        ctx.restore();
-    }
-
-    // ── Commentary window: poetic typographic annotations ─────────────────────
-    _drawCommentary(now, w, top) {
-        const insight=this.analysisData.insightAt(now);
-        if(!insight) return;
-        const el=now-insight.time, p=el/insight.duration;
-        const fade=p<0.12?p/0.12:p>0.78?1-(p-0.78)/0.22:1;
-        if(fade<0.01) return;
-        const palette=getPalette(), ctx=this.ctx, ba=ctx.globalAlpha, mb=isMobile();
-        const color=insight.type==='motif'
-            ?palette.voices[(insight.track||0)%palette.voices.length]
-            :insight.type==='key'?palette.gold:palette.ink;
-        ctx.save();
-        ctx.globalAlpha=ba*fade*0.65;
-        ctx.fillStyle=color;
-        ctx.font=`italic ${mb?11:13}px 'EB Garamond',serif`;
-        ctx.textAlign='right'; ctx.textBaseline='top';
-        ctx.fillText(insight.text, w-(mb?14:46), top+(mb?18:24));
-        ctx.restore();
     }
 
     _drawPitchAxis(w, top, height) {
@@ -699,7 +637,7 @@ class Renderer {
         }
         ctx.restore();
 
-        // Chord from pre-calculated stable timeline
+        // Chord from pre-calculated stable timeline (we still compute it but only show here)
         const chord=this.analysisData?.ready?this.analysisData.chordAt(now):null;
         if(chord?.name){
             const QM={
@@ -720,17 +658,6 @@ class Renderer {
                 if(lbl) ctx.fillText(lbl,cx,mb?48:68);
             }
             ctx.restore();
-        }
-
-        if(this.roadmapActive&&this.analysisData?.ready){
-            const seg=this.analysisData.keyAt(now);
-            if(seg){
-                ctx.save(); ctx.globalAlpha=ba*0.28; ctx.fillStyle=pal.gold;
-                ctx.font=`italic ${mb?10:11}px 'EB Garamond',serif`;
-                ctx.textAlign='center'; ctx.textBaseline='bottom';
-                ctx.fillText((seg.key+' '+seg.mode).toUpperCase().split('').join(' '),cx,h-(mb?18:28));
-                ctx.restore();
-            }
         }
 
         const active=this.notes.filter(n=>now>=n.time&&now<=n.time+n.duration);
@@ -769,140 +696,32 @@ class Renderer {
         });
     }
 
-    // ── Pedal point anchor lines ───────────────────────────────────────────────
-    _drawPedalPoints(now, w, top, height, playheadX, pxPerSec) {
-        if(!this.analysisData?.pedalPoints.length) return;
-        const fwd=(w-playheadX)/pxPerSec+0.5, lb=3.5;
-        const pal=getPalette(), ba=this.ctx.globalAlpha;
-        const pulse=0.5+0.5*Math.sin(now*1.6); // one sin per frame, negligible
-        this.analysisData.pedalPoints.forEach(pd=>{
-            if(pd.endTime<now-lb||pd.time>now+fwd) return;
-            const x0=Math.floor(Math.max(playheadX,playheadX+(pd.time-now)*pxPerSec));
-            const x1=Math.floor(Math.min(w-16,playheadX+(pd.endTime-now)*pxPerSec));
-            if(x1<=x0) return;
-            const y=Math.floor(this.midiToY(pd.midi,top,height));
-            const act=now>=pd.time&&now<=pd.endTime;
-            this.ctx.save();
-            this.ctx.globalAlpha=ba*(act?0.14+pulse*0.10:0.05);
-            this.ctx.strokeStyle=pal.gold; this.ctx.lineWidth=1;
-            this.ctx.setLineDash([4,6]);
-            this.ctx.beginPath(); this.ctx.moveTo(x0,y); this.ctx.lineTo(x1,y); this.ctx.stroke();
-            this.ctx.setLineDash([]);
-            this.ctx.restore();
-        });
-    }
-
-    // ── Borgean Memory Layer: ghost of dux aligned with comes ─────────────────
-    // When a canon answer is playing, renders the original subject as a translucent
-    // "window into the past" at the equivalent moment in the score.
-    _drawMemoryLayer(now, w, top, height, playheadX, pxPerSec) {
-        if(!this.analysisData?.motifs.length) return;
-        const {entries}=this.analysisData.motifs[0];
-        const dux=entries[0];
-        // Find any active Comes entry (non-first)
-        const comes=entries.find((e,i)=>i>0&&now>=e.time-0.4&&now<=e.endTime+0.5);
-        if(!comes) return;
-
-        const offset=comes.time-dux.time; // shift dux notes into comes timeframe
-        const elapsed=now-(comes.time-0.4);
-        const dur=comes.endTime+0.5-(comes.time-0.4);
-        const fadeAlpha=Math.sin(Math.min(1,elapsed/dur)*Math.PI);
-        if(fadeAlpha<0.01) return;
-
-        const pal=getPalette(), ba=this.ctx.globalAlpha;
-        const color=pal.voices[dux.track%pal.voices.length];
-
-        // Compute ghost positions (dux notes time-shifted by offset)
-        const ghosts=dux.notes.map(n=>({
-            x:Math.floor(playheadX+(n.time+offset-now)*pxPerSec),
-            y:Math.floor(this.midiToY(n.midi,top,height))
-        })).filter(p=>p.x>playheadX-40&&p.x<w+10);
-        if(!ghosts.length) return;
-
-        const xs=ghosts.map(p=>p.x), ys=ghosts.map(p=>p.y);
-        const bx0=Math.min(...xs)-12, bx1=Math.max(...xs)+16;
-        const by0=Math.min(...ys)-14, by1=Math.max(...ys)+14;
-
-        this.ctx.save();
-        // Window frame
-        this.ctx.globalAlpha=ba*fadeAlpha*0.16;
-        this.ctx.strokeStyle=color; this.ctx.lineWidth=0.75;
-        this.ctx.strokeRect(bx0,by0,bx1-bx0,by1-by0);
-        // Ghost notes
-        ghosts.forEach(p=>{
-            this.ctx.globalAlpha=ba*fadeAlpha*0.22;
-            this.ctx.strokeStyle=color; this.ctx.lineWidth=0.75;
-            this.ctx.beginPath(); this.ctx.arc(p.x,p.y,4,0,Math.PI*2); this.ctx.stroke();
-        });
-        // "memory" label
-        this.ctx.globalAlpha=ba*fadeAlpha*0.28;
-        this.ctx.fillStyle=color;
-        this.ctx.font=`italic 9px 'EB Garamond',serif`;
-        this.ctx.textAlign='left'; this.ctx.textBaseline='bottom';
-        this.ctx.fillText('memory',bx0,by0-2);
-        this.ctx.restore();
-    }
-
-    // ── Motif brackets ─────────────────────────────────────────────────────────
-    _drawMotifBrackets(now, w, top, height, playheadX, pxPerSec) {
-        if(!this.analysisData?.motifs.length) return;
-        const {entries}=this.analysisData.motifs[0];
-        const fwd=(w-playheadX)/pxPerSec+0.5, lb=3.5;
-        const pal=getPalette(), ba=this.ctx.globalAlpha, mb=isMobile();
-        entries.forEach(e=>{
-            if(e.endTime<now-lb||e.time>now+fwd) return;
-            const isAct=now>=e.time&&now<=e.endTime;
-            const color=pal.voices[e.track%pal.voices.length];
-            const pts=e.notes
-                .map(n=>({x:Math.floor(playheadX+(n.time-now)*pxPerSec),y:Math.floor(this.midiToY(n.midi,top,height))}))
-                .filter(p=>p.x>=playheadX-2&&p.x<=w-16);
-            if(pts.length<2) return;
-            const x0=pts[0].x, x1=pts[pts.length-1].x;
-            const avgY=Math.floor(pts.reduce((s,p)=>s+p.y,0)/pts.length);
-            const bY=avgY+16;
-            this.ctx.save();
-            this.ctx.globalAlpha=ba*(isAct?0.82:0.35);
-            this.ctx.strokeStyle=color; this.ctx.lineWidth=isAct?1.5:0.75;
-            if(!isAct)this.ctx.setLineDash([3,4]);
-            this.ctx.beginPath();
-            this.ctx.moveTo(x0,bY-5); this.ctx.lineTo(x0,bY);
-            this.ctx.lineTo(Math.min(x1,w-20),bY);
-            if(x1<=w-20)this.ctx.lineTo(x1,bY-5);
-            this.ctx.stroke(); this.ctx.setLineDash([]);
-            if(isAct){
-                const vn=this.analysisData.voiceNameFor(e.track,this.voiceGroups).toLowerCase();
-                this.ctx.globalAlpha=ba*0.68; this.ctx.fillStyle=color;
-                this.ctx.font=`italic ${mb?9:10}px 'EB Garamond',serif`;
-                this.ctx.textAlign='left'; this.ctx.textBaseline='top';
-                this.ctx.fillText(vn,x0+2,bY+2);
-            }
-            this.ctx.restore();
-        });
-    }
-
-    // ── Enhanced Ghost Hand-off: morphing motif contour flies between voices ───
-    // The 5-note cluster maintains pitch relationships and morphs toward target voice.
+    // ── Canon Ghost Hand-off (five dots) — the only analysis overlay kept ─────
     _drawGhostHandoff(now, w, top, height, playheadX, pxPerSec) {
         if(!this.analysisData?.ghostPaths.length) return;
         const pal=getPalette(), ba=this.ctx.globalAlpha;
         this.analysisData.ghostPaths.forEach(path=>{
             const dur=Math.max(0.2, path.endTime-path.startTime);
-            if(now<path.startTime||now>path.endTime+0.35) return;
+            if(now<path.startTime||now>path.endTime+0.45) return;
             const raw=(now-path.startTime)/dur;
-            const prog=Math.min(1,Math.max(0,raw));
+            const prog=Math.min(1, Math.max(0, raw));
             // Ease in-out
-            const t=prog<0.5?2*prog*prog:1-2*(1-prog)*(1-prog);
-            const fade=Math.sin(prog*Math.PI);
-            if(fade<0.02) return;
+            const t=prog<0.5 ? 2*prog*prog : 1-2*(1-prog)*(1-prog);
+            // Plateau + graceful fade: holds longer, then fades elegantly
+            let fade;
+            if (prog < 0.1) fade = prog / 0.1;
+            else if (prog > 0.75) fade = Math.max(0, 1 - (prog - 0.75) / 0.25);
+            else fade = 1.0;
+            fade *= 0.95; // slight overall softness
+
+            if(fade < 0.01) return;
 
             const fromY=Math.floor(this.midiToY(path.fromMidi,top,height));
             const toY  =Math.floor(this.midiToY(path.toMidi,  top,height));
             const fromX=Math.floor(playheadX+(path.startTime-now)*pxPerSec);
             const toX  =Math.floor(playheadX+(path.endTime  -now)*pxPerSec);
-            // Bezier control point: arc upward
             const cpX=Math.floor((fromX+toX)/2);
             const cpY=Math.floor(Math.min(fromY,toY)-Math.abs(toX-fromX)*0.28-24);
-            // Current Bezier position
             const mt=1-t;
             const cx=Math.floor(mt*mt*fromX+2*mt*t*cpX+t*t*toX);
             const cy=Math.floor(mt*mt*fromY+2*mt*t*cpY+t*t*toY);
@@ -911,7 +730,7 @@ class Renderer {
             const ctx=this.ctx;
 
             ctx.save();
-            // ── Arc trail ──
+            // Arc trail
             ctx.globalAlpha=ba*fade*0.18;
             ctx.strokeStyle=color; ctx.lineWidth=1.2;
             ctx.beginPath();
@@ -919,50 +738,39 @@ class Renderer {
             ctx.quadraticCurveTo(cpX,cpY,cx,cy);
             ctx.stroke();
 
-            // ── Motif contour cluster: each note as dot, arranged by pitch ──
+            // Motif contour cluster (five dots)
             const noteCount=path.noteMidis.length;
             path.noteMidis.forEach((midi,i)=>{
-                // x: spread notes horizontally based on time offset
-                const tFrac=path.duxDuration>0?path.noteTimeOffsets[i]/path.duxDuration:i/(noteCount-1||1);
+                const tFrac=path.duxDuration>0 ? path.noteTimeOffsets[i]/path.duxDuration : i/(noteCount-1||1);
                 const dotX=cx+Math.floor((tFrac-0.5)*52);
-                // y: pitch of the note, shifted toward the arc center as it travels
                 const naturalY=Math.floor(this.midiToY(midi,top,height));
                 const dotY=Math.floor(naturalY*(1-t)+cy*t);
                 const isFirst=i===0;
-                ctx.globalAlpha=ba*fade*(isFirst?0.72:0.45);
-                ctx.fillStyle=color;
+                let dotAlpha = ba * fade * (isFirst ? 0.72 : 0.45);
+                if (t > 0.8) {
+                    const merge = (t-0.8)/0.2;
+                    dotAlpha *= (1 - merge);
+                }
+                ctx.globalAlpha = Math.min(1, dotAlpha);
+                ctx.fillStyle = color;
                 ctx.beginPath();
-                ctx.arc(dotX,dotY,isFirst?4.5:2.8,0,Math.PI*2);
+                ctx.arc(dotX, dotY, isFirst ? 4.5 : 2.8, 0, Math.PI*2);
                 ctx.fill();
             });
 
-            // ── Arrival pulse at destination ──
-            if(t>0.75){
-                const pulse=(t-0.75)/0.25;
-                ctx.globalAlpha=ba*(1-pulse)*0.5;
-                ctx.strokeStyle=color; ctx.lineWidth=1;
-                ctx.beginPath();
-                ctx.arc(toX,toY,8+pulse*14,0,Math.PI*2);
-                ctx.stroke();
+            // Elegant arrival pulse at destination
+            if(t > 0.7){
+                const arrivalFade = Math.min(1, (t-0.7)/0.3) * (1 - Math.max(0, (prog-0.9)/0.1));
+                if(arrivalFade > 0.01){
+                    ctx.globalAlpha = ba * arrivalFade * 0.5;
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    ctx.arc(toX, toY, 12 + (t-0.7)*8, 0, Math.PI*2);
+                    ctx.stroke();
+                }
             }
             ctx.restore();
-        });
-    }
-
-    // ── Cadence diamonds ───────────────────────────────────────────────────────
-    _drawCadenceDiamonds(now, w, top, height, playheadX, pxPerSec) {
-        const fwd=(w-playheadX)/pxPerSec+0.5, lb=3.5;
-        const pal=getPalette(), ba=this.ctx.globalAlpha;
-        this.analysisData.cadences.forEach(c=>{
-            if(c.time<now-lb||c.time>now+fwd) return;
-            const x=Math.floor(playheadX+(c.time-now)*pxPerSec);
-            const alpha=c.time<now?Math.max(0,0.5*(1-(now-c.time)/lb)):0.72;
-            const s=4, y=top-7;
-            this.ctx.save(); this.ctx.globalAlpha=ba*alpha; this.ctx.fillStyle=pal.gold;
-            this.ctx.beginPath();
-            this.ctx.moveTo(x,y-s); this.ctx.lineTo(x+s,y);
-            this.ctx.lineTo(x,y+s); this.ctx.lineTo(x-s,y);
-            this.ctx.closePath(); this.ctx.fill(); this.ctx.restore();
         });
     }
 
@@ -985,7 +793,6 @@ class Renderer {
         c.quadraticCurveTo(x,y+h,x,y+h-r); c.lineTo(x,y+r);
         c.quadraticCurveTo(x,y,x+r,y); c.closePath();
     }
-
 }
 
 // ═══ App ═══════════════════════════════════════════════════════════════════════
@@ -1008,7 +815,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const paletteMenu   = document.getElementById("palette-menu");
     const dynSlider     = document.getElementById("dynamics-slider");
     const dynLabel      = document.getElementById("dynamics-label");
-    const roadmapBtn    = document.getElementById("roadmap-toggle");
     const voiceIso      = document.getElementById("voice-iso");
 
     let hasPlayedOnce=false, introActive=false, introStartWallTime=0;
@@ -1016,7 +822,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     ren.clear();
 
-    // ── ResizeObserver: handles resize, orientation, split-screen ────────────
     const ro = new ResizeObserver(() => {
         if (!ren.isAnimating) {
             if (ren.notes.length > 0) ren.draw(engine.pauseOffset || 0, false);
@@ -1025,14 +830,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
     ro.observe(canvas);
 
-    // ── Roadmap toggle ───────────────────────────────────────────────────────
-    roadmapBtn?.addEventListener("click", () => {
-        const on = roadmapBtn.classList.toggle("active");
-        ren.roadmapActive = on;
-        if (!ren.isAnimating && ren.notes.length > 0) ren.draw(engine.pauseOffset || 0, false);
-    });
-
-    // ── Voice isolation ──────────────────────────────────────────────────────
     function buildVoiceButtons() {
         voiceIso.innerHTML = '';
         const ids = Object.keys(ren.voiceGroups).map(Number).sort((a,b)=>a-b);
@@ -1057,7 +854,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateVoiceBtnUI();
         ren.soloedTracks = new Set(soloedTracks);
         engine.soloedTracks = new Set(soloedTracks);
-        // Restart playback from current position to apply audio isolation
         if (engine.isPlaying && !introActive) {
             const t = Math.max(0, Tone.Transport.seconds);
             engine.play(t, false, () => {});
@@ -1076,7 +872,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    // ── Dynamics ─────────────────────────────────────────────────────────────
     if (dynSlider) {
         dynSlider.value = Math.round(engine.dynamicsAmount * 100);
         const upd = v => {
@@ -1088,7 +883,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         dynSlider.addEventListener("input", e => { engine.dynamicsAmount=e.target.value/100; upd(e.target.value); });
     }
 
-    // ── Palette ───────────────────────────────────────────────────────────────
     function renderPaletteToggle() {
         paletteToggle.innerHTML = '';
         getPalette().voices.slice(0,4).forEach(c=>{
@@ -1118,7 +912,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.addEventListener("click",e=>{if(!paletteMenu.contains(e.target)&&e.target!==paletteToggle)paletteMenu.classList.remove("open");});
     renderPaletteToggle(); renderPaletteMenu();
 
-    // ── Library ───────────────────────────────────────────────────────────────
     try {
         await lib.load("./bach.zip");
         tSel.innerHTML = "";
@@ -1170,7 +963,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         updateTitle(false);
     };
 
-    // ── Render loop ───────────────────────────────────────────────────────────
     let rafId=null, isDragging=false;
     const stopLoop=()=>{if(rafId){cancelAnimationFrame(rafId);rafId=null;}};
     const startLoop=()=>{
@@ -1206,7 +998,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const dur=engine.loadTrack(buf);
                 ren.setup(engine.notes,dur,engine.tempo);
                 buildVoiceButtons();
-                // Analysis runs async — doesn't block UI or audio start
                 setTimeout(()=>{
                     analysis.analyze(engine.notes,dur,engine.tempo);
                     ren.analysisData=analysis;
@@ -1230,7 +1021,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
     playBtn.onclick=()=>{if(engine.isPlaying||introActive)doPause();else doPlay();};
 
-    // ── Scrubber ──────────────────────────────────────────────────────────────
     let wasPlaying=false;
     const onSeekStart=()=>{
         if(ren.totalTime<=0) return;
@@ -1261,7 +1051,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     seek.addEventListener("pointerup",onSeekEnd);
     seek.addEventListener("pointercancel",onSeekEnd);
 
-    // ── Hover ─────────────────────────────────────────────────────────────────
     if(window.matchMedia("(hover:hover)").matches){
         canvas.addEventListener("mousemove",e=>{
             if(ren.view==='voice-constellation'){
@@ -1279,7 +1068,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    // ── Keyboard ──────────────────────────────────────────────────────────────
     document.addEventListener("keydown",e=>{
         if(e.target.tagName==="SELECT"||e.target.tagName==="INPUT") return;
         if(e.code==="Space"){e.preventDefault();if(!playBtn.disabled)playBtn.click();}
